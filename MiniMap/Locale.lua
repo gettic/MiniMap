@@ -20,6 +20,12 @@ L.NAMES_NOART = "no art"
 L.NAMES_SHOWN = "shown"
 L.NAMES_HIDDEN = "hidden"
 
+L.HELP_4 = "/mmap pos - print where the minimap's Edit Mode frame is (for bug reports)."
+L.POS_NONE = "The minimap's frame isn't there (or has no position yet)."
+L.POS_POINT = "Anchor: %s to %s %s, x %.1f, y %.1f (scale %.2f)"
+L.POS_EDGES = "Edges: left %.1f, right %.1f, top %.1f, bottom %.1f (screen: right %.1f, top %.1f)"
+L.POS_CLAMP = "Clamp insets: left %.1f, right %.1f, top %.1f, bottom %.1f"
+
 L.RESCANNED = "Looked for new minimap buttons: %d in the bar."
 L.RESCAN_COMBAT = "Will look for new minimap buttons after combat."
 L.SETUP_COMBAT = "Will finish setting up after combat."

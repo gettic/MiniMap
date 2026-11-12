@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-> **Beta.** Version 0.1.0-beta.9 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+> **Beta.** Version 0.1.0-beta.10 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)
@@ -58,6 +58,7 @@ Mini Map works by itself as soon as you log in. There are no settings to change.
 | `/mmap` | Shows a short help. |
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
 | `/mmap names` | Hold the mouse over a minimap button and type it to see the button's name, and its textures (size, art, crop, shown, alpha). If a button isn't picked up or looks wrong, tell us what it prints so we can fix it. |
+| `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 

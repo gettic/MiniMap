@@ -217,11 +217,33 @@ local function PrintNames()
 	end
 end
 
+-- `/mmap pos`: where Edit Mode's minimap frame (MinimapCluster) is, in its own units, and
+-- the screen's size in the same units, plus the clamp insets. Read-only.
+local function PrintPos()
+	local c = MinimapCluster
+	if not (c and c.GetPoint and c:GetLeft()) or (c.IsForbidden and c:IsForbidden()) then
+		ns.Print(L.POS_NONE)
+		return
+	end
+	local point, rel, relPoint, x, y = c:GetPoint(1)
+	local relName = rel and rel.GetName and rel:GetName() or (rel and "?" or "UIParent")
+	ns.Print(L.POS_POINT, tostring(point), tostring(relName), tostring(relPoint), x or 0, y or 0, c:GetScale() or 1)
+	local k = (UIParent:GetEffectiveScale() or 1) / (c:GetEffectiveScale() or 1)
+	ns.Print(L.POS_EDGES, c:GetLeft(), c:GetRight(), c:GetTop(), c:GetBottom(),
+		UIParent:GetRight() * k, UIParent:GetTop() * k)
+	if c.GetClampRectInsets then
+		local l, r, t, b = c:GetClampRectInsets()
+		ns.Print(L.POS_CLAMP, l or 0, r or 0, t or 0, b or 0)
+	end
+end
+
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
 	msg = strtrim(msg or ""):lower()
 	if msg == "names" then
 		PrintNames()
+	elseif msg == "pos" then
+		PrintPos()
 	elseif msg == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -233,5 +255,6 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_1)
 		ns.Print(L.HELP_2)
 		ns.Print(L.HELP_3)
+		ns.Print(L.HELP_4)
 	end
 end

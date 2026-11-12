@@ -194,23 +194,41 @@ function Square:FitSelection()
 			uB = uB and math.min(uB, b) or b
 		end
 	end
-	sel:ClearAllPoints()
 	if not (uL and cl) then
 		-- Nothing of ours shows: Blizzard's own box and clamp.
+		self.fit = nil
+		sel:ClearAllPoints()
 		sel:SetAllPoints(c)
 		if c.SetClampRectInsets then c:SetClampRectInsets(0, 0, 0, 0) end
 		return
 	end
 	local ss = sel:GetEffectiveScale()
 	if not (ss and ss > 0) then ss = 1 end
-	local l, r = (uL - cl) / ss, (uR - cr) / ss
-	local t, b = (uT - ct) / ss, (uB - cb) / ss
-	sel:SetPoint("TOPLEFT", c, "TOPLEFT", l, t)
-	sel:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", r, b)
+	local cs = c:GetEffectiveScale()
+	if not (cs and cs > 0) then cs = 1 end
+	-- Kept so ApplyClamp can put them back at once, without reading any rects.
+	self.fit = {
+		sel = { (uL - cl) / ss, (uR - cr) / ss, (uT - ct) / ss, (uB - cb) / ss },
+		clamp = { (uL - cl) / cs, (uR - cr) / cs, (uT - ct) / cs, (uB - cb) / cs },
+	}
+	self:ApplyClamp()
+end
+
+-- Our last box and clamp, right now (no rect reads). Runs straight after Blizzard re-anchors
+-- the cluster or its box, so the screen clamp never works with Blizzard's full-size insets
+-- (that pushed the map left once at every load).
+function Square:ApplyClamp()
+	local fit = self.fit
+	if not (self.active and fit) or InCombatLockdown() then return end
+	local c = MinimapCluster
+	local sel = c and c.Selection
+	if not (Usable(c) and Usable(sel) and sel.SetPoint) then return end
+	local p = fit.sel
+	sel:ClearAllPoints()
+	sel:SetPoint("TOPLEFT", c, "TOPLEFT", p[1], p[3])
+	sel:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", p[2], p[4])
 	if c.SetClampRectInsets then
-		local cs = c:GetEffectiveScale()
-		if not (cs and cs > 0) then cs = 1 end
-		c:SetClampRectInsets((uL - cl) / cs, (uR - cr) / cs, (uT - ct) / cs, (uB - cb) / cs)
+		c:SetClampRectInsets(fit.clamp[1], fit.clamp[2], fit.clamp[3], fit.clamp[4])
 	end
 end
 
@@ -317,6 +335,15 @@ function Square:InstallHooks()
 	if MinimapCluster.HookScript then
 		MinimapCluster:HookScript("OnSizeChanged", function() Square:QueueFit() end)
 	end
+	-- Edit Mode re-anchors the cluster / its box (load, layout change): our clamp at once.
+	for _, method in ipairs({ "AnchorSelectionFrame", "ApplySystemAnchor" }) do
+		if type(MinimapCluster[method]) == "function" then
+			hooksecurefunc(MinimapCluster, method, function()
+				ns.SafeRun("EditModeBox", Square.ApplyClamp, Square)
+				Square:QueueFit()
+			end)
+		end
+	end
 end
 
 function Square:Setup()
@@ -329,6 +356,10 @@ function Square:Setup()
 	self:CreateHeader()
 	self:InstallHooks()
 	self:PlacePieces(Square.HeaderIsUnderneath())
+	-- Box and clamp now, not next frame, so they are set before Edit Mode places the cluster.
+	ns.RunOutOfCombat("edit-fit", function()
+		ns.SafeRun("EditModeBox", Square.FitSelection, Square)
+	end)
 	-- Tell other addons (LibDBIcon, HereBeDragons...) the map is square. Core only gets
 	-- here when no other addon has defined it.
 	if not GetMinimapShape then

@@ -15,6 +15,7 @@ local placing = false   -- true while we move a button ourselves (stops hook loo
 local snapping = false  -- true while we size/scale a button ourselves (stops hook loops)
 local slotArt = {}      -- [button] = our slot overlay frame (child of the bar)
 local hiddenArt = {}    -- [texture] = true: foreign art we set to alpha 0
+local cropped = {}      -- [texture] = true: edge already cropped (never twice)
 local PlaceOne          -- defined below (used by Snap first)
 local headerUnder = false
 local layoutPending, scanPending = false, false
@@ -111,16 +112,45 @@ local function IsForeign(tex)
 	return false
 end
 
--- The button's icon: its `icon`/`Icon` texture, else its largest texture that isn't foreign art
--- or its highlight, preferring ones no bigger than the button was (rings stick out of it).
-local function FindIcon(f, maxSize)
+-- The texture's atlas name, or nil.
+local function AtlasOf(tex)
+	local a = tex.GetAtlas and tex:GetAtlas()
+	if type(a) == "string" and a ~= "" then return a end
+	return nil
+end
+
+-- Does the texture show a file or an atlas (not empty, not just a colour)?
+local function HasArt(tex)
+	if AtlasOf(tex) then return true end
+	local id = tex.GetTextureFileID and tex:GetTextureFileID()
+	if type(id) == "number" and id > 0 then return true end
+	local p = tex.GetTexture and tex:GetTexture()
+	return (type(p) == "number" and p > 0) or (type(p) == "string" and p ~= "")
+end
+
+local function IsVisible(tex)
+	return tex:IsShown() and (tex:GetAlpha() or 0) > 0
+end
+
+-- The button's icon: its `icon`/`Icon` texture, else its NormalTexture (own-made buttons keep
+-- their logo there), else its largest shown texture with art that isn't foreign art or its
+-- highlight, preferring ones no bigger than the button was (rings stick out of it).
+-- Never a hidden or empty texture. Sizes are read before the button is resized.
+local function FindIcon(f, maxSize, sizes)
 	local icon = f.icon or f.Icon
 	if IsTexture(icon) then return icon end
 	local hl = f.GetHighlightTexture and f:GetHighlightTexture()
+	local normal = f.GetNormalTexture and f:GetNormalTexture()
+	if IsTexture(normal) and normal ~= hl and HasArt(normal) and not IsForeign(normal)
+		and (normal:GetAlpha() or 0) > 0 then
+		return normal
+	end
 	local best, bestArea, fit, fitArea = nil, -1, nil, -1
 	for _, r in ipairs({ f:GetRegions() }) do
-		if IsTexture(r) and r ~= hl and not IsForeign(r) then
-			local w, h = r:GetSize()
+		if IsTexture(r) and r ~= hl and not IsForeign(r) and IsVisible(r) and HasArt(r) then
+			local s = sizes and sizes[r]
+			local w, h
+			if s then w, h = s[1], s[2] else w, h = r:GetSize() end
 			w, h = w or 0, h or 0
 			local area = w * h
 			if area > bestArea then best, bestArea = r, area end
@@ -128,6 +158,31 @@ local function FindIcon(f, maxSize)
 		end
 	end
 	return fit or best
+end
+
+-- Crops the edge off a texture inside the owner's own crop (so a sheet holding several
+-- images keeps showing its part). Atlases and rotated coords are left alone. Once per texture.
+local function CropInside(tex)
+	if cropped[tex] or AtlasOf(tex) or not tex.GetTexCoord then return end
+	local ulx, uly, llx, lly, urx, ury, lrx, lry = tex:GetTexCoord()
+	if not (ulx and lry) then return end
+	local e = 0.0001
+	if math.abs(ulx - llx) > e or math.abs(urx - lrx) > e or math.abs(uly - ury) > e or math.abs(lly - lry) > e then
+		return -- rotated or skewed: not ours to change
+	end
+	local c = T.slot.iconCoords -- left, right, top, bottom as fractions of the owner's rect
+	local w, h = urx - ulx, lly - uly
+	tex:SetTexCoord(ulx + c[1] * w, ulx + c[2] * w, uly + c[3] * h, uly + c[4] * h)
+	cropped[tex] = true
+end
+
+-- Puts a texture into the slot: inset from the button's edges and cropped.
+local function FitInSlot(tex, f)
+	local inset = T.slot.iconInset
+	tex:ClearAllPoints()
+	tex:SetPoint("TOPLEFT", f, "TOPLEFT", inset, -inset)
+	tex:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -inset, inset)
+	CropInside(tex)
 end
 
 local function MakeArt(parent, layer, spec)
@@ -173,6 +228,11 @@ local function Normalize(f)
 	local size = T.iconSize
 	local ow, oh = f:GetSize()
 	local oldSize = math.max(ow or 0, oh or 0, size)
+	-- Texture sizes as the owner made them (before the button is resized).
+	local sizes = {}
+	for _, r in ipairs({ f:GetRegions() }) do
+		if IsTexture(r) then sizes[r] = { r:GetSize() } end
+	end
 	snapping = true
 	f:SetScale(1)
 	f:SetSize(size, size)
@@ -180,20 +240,25 @@ local function Normalize(f)
 	f:SetFrameLevel(bar:GetFrameLevel() + 2)
 	snapping = false
 
-	local icon = FindIcon(f, oldSize)
-	if icon then
-		local inset = T.slot.iconInset
-		icon:ClearAllPoints()
-		icon:SetPoint("TOPLEFT", f, "TOPLEFT", inset, -inset)
-		icon:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -inset, inset)
-		icon:SetTexCoord(unpack(T.slot.iconCoords))
+	local icon = FindIcon(f, oldSize, sizes)
+	local normal = f.GetNormalTexture and f:GetNormalTexture()
+	local pushed = f.GetPushedTexture and f:GetPushedTexture()
+	if icon then FitInSlot(icon, f) end
+	if IsTexture(pushed) and pushed ~= icon and HasArt(pushed) and not IsForeign(pushed) then
+		FitInSlot(pushed, f)
 	end
-	-- Hide the owner's ring, background, highlight and anything bigger than the slot.
+	-- Hide the owner's ring, background and highlight always; anything else bigger than the
+	-- slot only when a visible icon was found (never the normal/pushed state textures).
+	local iconShows = icon and IsVisible(icon)
 	local hl = f.GetHighlightTexture and f:GetHighlightTexture()
 	for _, r in ipairs({ f:GetRegions() }) do
 		if IsTexture(r) and r ~= icon then
-			local w, h = r:GetSize()
-			if r == hl or IsForeign(r) or (w or 0) > size or (h or 0) > size then
+			local hide = r == hl or IsForeign(r)
+			if not hide and iconShows and r ~= normal and r ~= pushed then
+				local w, h = r:GetSize()
+				hide = (w or 0) > size or (h or 0) > size
+			end
+			if hide then
 				r:SetAlpha(0)
 				hiddenArt[r] = true
 			end
@@ -253,6 +318,7 @@ function Bar:Layout()
 	Bar.shownCount = #shown
 	if #shown == 0 then
 		bar:Hide()
+		ns.Square:QueueFit()
 		return
 	end
 
@@ -268,6 +334,7 @@ function Bar:Layout()
 	for f, o in pairs(slotArt) do
 		o:SetShown(slotOf[f] ~= nil)
 	end
+	ns.Square:QueueFit() -- bar height or side changed: Edit Mode box follows
 end
 
 -- Layout on the next frame, once, however many times it is asked for.
@@ -446,6 +513,7 @@ function Bar:SetSide(under)
 		bar:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -T.barGap)
 	end
 	self:QueueLayout()
+	ns.Square:QueueFit()
 end
 
 ---------------------------------------------------------------------------

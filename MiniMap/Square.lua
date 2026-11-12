@@ -161,6 +161,70 @@ function Square:PlaceDiel(under)
 	d:SetFrameLevel(Minimap:GetFrameLevel() + 5)
 end
 
+---------------------------------------------------------------------------
+-- Edit Mode box: MinimapCluster still has Blizzard's round-map margins, header area and
+-- padding, and doesn't count our icon bar. Its Selection (the blue box Edit Mode drags and
+-- snaps with) is anchored to hug what we draw: border + header strip + bar, TOPLEFT then
+-- BOTTOMRIGHT on the cluster (the two points Edit Mode reads), and the screen clamp follows,
+-- so the map can sit flush in a screen corner. Plain widget calls only, out of combat.
+---------------------------------------------------------------------------
+local function ScreenRect(f)
+	if not (f and f.IsVisible and f:IsVisible()) then return end
+	local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+	if not (l and r and t and b) then return end
+	local s = f:GetEffectiveScale()
+	return l * s, r * s, t * s, b * s
+end
+
+function Square:FitSelection()
+	if not self.active then return end
+	local c = MinimapCluster
+	local sel = c and c.Selection
+	if not (Usable(c) and Usable(sel) and sel.SetPoint and sel.SetAllPoints) then return end
+	local cl, cr, ct, cb = ScreenRect(c)
+	local bar = ns.IconBar and ns.IconBar.frame
+	local uL, uR, uT, uB
+	for _, f in ipairs({ self.border, self.header, bar }) do
+		local l, r, t, b = ScreenRect(f)
+		if l then
+			uL = uL and math.min(uL, l) or l
+			uR = uR and math.max(uR, r) or r
+			uT = uT and math.max(uT, t) or t
+			uB = uB and math.min(uB, b) or b
+		end
+	end
+	sel:ClearAllPoints()
+	if not (uL and cl) then
+		-- Nothing of ours shows: Blizzard's own box and clamp.
+		sel:SetAllPoints(c)
+		if c.SetClampRectInsets then c:SetClampRectInsets(0, 0, 0, 0) end
+		return
+	end
+	local ss = sel:GetEffectiveScale()
+	if not (ss and ss > 0) then ss = 1 end
+	local l, r = (uL - cl) / ss, (uR - cr) / ss
+	local t, b = (uT - ct) / ss, (uB - cb) / ss
+	sel:SetPoint("TOPLEFT", c, "TOPLEFT", l, t)
+	sel:SetPoint("BOTTOMRIGHT", c, "BOTTOMRIGHT", r, b)
+	if c.SetClampRectInsets then
+		local cs = c:GetEffectiveScale()
+		if not (cs and cs > 0) then cs = 1 end
+		c:SetClampRectInsets((uL - cl) / cs, (uR - cr) / cs, (uT - ct) / cs, (uB - cb) / cs)
+	end
+end
+
+-- Next frame (anchors settled), once however often asked, after combat if needed.
+function Square:QueueFit()
+	if not self.active or self.fitPending then return end
+	self.fitPending = true
+	C_Timer.After(0, function()
+		Square.fitPending = false
+		ns.RunOutOfCombat("edit-fit", function()
+			ns.SafeRun("EditModeBox", Square.FitSelection, Square)
+		end)
+	end)
+end
+
 -- All three, after combat if needed. `under` = the value Blizzard just applied, if known.
 function Square:PlacePieces(under)
 	if not self.active then return end
@@ -172,6 +236,7 @@ function Square:PlacePieces(under)
 		ns.SafeRun("Corners", self.PlaceCorners, self, u)
 		ns.SafeRun("DayNight", self.PlaceDiel, self, u)
 		ns.SafeRun("Layer", self.ApplyLayer, self)
+		self:QueueFit()
 	end)
 end
 
@@ -246,6 +311,10 @@ function Square:InstallHooks()
 	end
 	if MinimapCluster.SetEditModeScale then
 		hooksecurefunc(MinimapCluster, "SetEditModeScale", function() Square:PlacePieces() end)
+	end
+	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.
+	if MinimapCluster.HookScript then
+		MinimapCluster:HookScript("OnSizeChanged", function() Square:QueueFit() end)
 	end
 end
 

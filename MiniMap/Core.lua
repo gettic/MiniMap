@@ -166,11 +166,44 @@ local function FrameUnderMouse()
 	return GetMouseFocus and GetMouseFocus()
 end
 
+-- Lists the textures of a frame (layer, size, atlas or file, crop, shown, alpha), so a
+-- button's art can be looked into without other tools.
+local function PrintTextures(f)
+	if not f.GetRegions then return end
+	local n = 0
+	for _, r in ipairs({ f:GetRegions() }) do
+		if r.GetObjectType and r:GetObjectType() == "Texture" then
+			n = n + 1
+			local layer = r.GetDrawLayer and r:GetDrawLayer() or "?"
+			local w, h = r:GetSize()
+			local atlas = r.GetAtlas and r:GetAtlas()
+			local art
+			if type(atlas) == "string" and atlas ~= "" then
+				art = "atlas " .. atlas
+			else
+				art = tostring((r.GetTextureFileID and r:GetTextureFileID()) or r:GetTexture() or L.NAMES_NOART)
+			end
+			local left, right, top, bottom = 0, 1, 0, 1
+			if r.GetTexCoord then
+				local ulx, uly, _, lly, urx = r:GetTexCoord()
+				left, right, top, bottom = ulx or 0, urx or 1, uly or 0, lly or 1
+			end
+			ns.Print(L.NAMES_TEXTURE, tostring(r:GetName() or L.NAMES_UNNAMED), tostring(layer), w or 0, h or 0,
+				art, left, right, top, bottom, r:IsShown() and L.NAMES_SHOWN or L.NAMES_HIDDEN, r:GetAlpha() or 0)
+		end
+	end
+	if n == 0 then ns.Print(L.NAMES_NOTEX) end
+end
+
 local function PrintNames()
 	local f = FrameUnderMouse()
 	if not f or f == WorldFrame then
 		ns.Print(L.NAMES_NONE)
 		return
+	end
+	if not (f.IsForbidden and f:IsForbidden()) then
+		ns.Print(L.NAMES_TEXHEAD)
+		PrintTextures(f)
 	end
 	for _ = 1, 3 do
 		if not f or f == UIParent or f == WorldFrame then break end

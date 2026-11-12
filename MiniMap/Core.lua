@@ -153,10 +153,40 @@ end)
 ---------------------------------------------------------------------------
 -- /mmap
 ---------------------------------------------------------------------------
+-- Prints the frame under the mouse and its parents (name, type, size), so a player can tell
+-- us the name of a minimap button the bar doesn't pick up.
+local function FrameUnderMouse()
+	if GetMouseFoci then
+		local foci = GetMouseFoci()
+		return foci and foci[1]
+	end
+	return GetMouseFocus and GetMouseFocus()
+end
+
+local function PrintNames()
+	local f = FrameUnderMouse()
+	if not f or f == WorldFrame then
+		ns.Print(L.NAMES_NONE)
+		return
+	end
+	for _ = 1, 3 do
+		if not f or f == UIParent or f == WorldFrame then break end
+		if f.IsForbidden and f:IsForbidden() then break end
+		local w, h = 0, 0
+		if f.GetSize then w, h = f:GetSize() end
+		local name = f.GetName and f:GetName() or nil
+		local ftype = f.GetObjectType and f:GetObjectType() or "?"
+		ns.Print(L.NAMES_LINE, tostring(name or L.NAMES_UNNAMED), ftype, w or 0, h or 0)
+		f = f.GetParent and f:GetParent() or nil
+	end
+end
+
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
 	msg = strtrim(msg or ""):lower()
-	if msg == "rescan" and ns.IconBar.active then
+	if msg == "names" then
+		PrintNames()
+	elseif msg == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
 			ns.RunOutOfCombat("scan", function() ns.IconBar:Scan() end)
@@ -166,5 +196,6 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 	else
 		ns.Print(L.HELP_1)
 		ns.Print(L.HELP_2)
+		ns.Print(L.HELP_3)
 	end
 end

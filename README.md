@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-> **Beta.** Version 0.1.0-beta.1 is the first release and is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+> **Beta.** Version 0.1.0-beta.2 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)
@@ -16,8 +16,8 @@ A square minimap with a bar under it that holds the minimap buttons. A World of 
 
 | Part | What you get |
 |---|---|
-| Square map | The round minimap becomes square, with a thin Blizzard metal border. It stays square with "Rotate Minimap" on. |
-| Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. |
+| Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border. It stays square with "Rotate Minimap" on. |
+| Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes) and Zygor's icon. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
 | Header | Blizzard's own zone name, clock, calendar, tracking and addon-compartment buttons stay where Blizzard puts them. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it. |
@@ -53,6 +53,7 @@ Mini Map works by itself as soon as you log in. There are no settings to change.
 |---|---|
 | `/mmap` | Shows a short help. |
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
+| `/mmap names` | Hold the mouse over a minimap button and type it to see the button's name. If a button isn't picked up, tell us its name so we can add it. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 
@@ -65,7 +66,7 @@ Mini Map already looks for new buttons a few times after login and when another 
 
 - **Corner clicks don't ping.** The game only pings inside a circle, so clicking in the square map's corners doesn't send a ping.
 - **The bar can hang off the screen.** Edit Mode's selection box covers the map but not the bar. If you put the minimap right at the bottom edge of the screen, the bar can end up partly off-screen. Move the map up a little.
-- **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it.
+- **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report the name on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 ## For people who change the code
 

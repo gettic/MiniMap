@@ -28,7 +28,13 @@ end
 -- Names that are never buttons to collect (map pins and our own frames).
 local SKIP_PATTERNS = { "Pin", "HereBeDragons", "GatherMate", "TomTom", "Questie", "HandyNotes", "^MiniMapForever" }
 -- Names that look like minimap buttons.
-local BUTTON_PATTERNS = { "[Mm]ini[Mm]ap.*[Bb]utton", "[Bb]utton.*[Mm]ini[Mm]ap", "[Mm]ini[Mm]ap[Ii]con", "^LibDBIcon10_" }
+local BUTTON_PATTERNS = {
+	"[Mm]ini[Mm]ap.*[Bb]utton", "[Bb]utton.*[Mm]ini[Mm]ap", "[Mm]ini[Mm]ap[Ii]con", "[Mm]ini[Mm]ap[Bb]tn",
+	"[Mm]ap[Ii]con$", "^LibDBIcon10_",
+}
+-- Buttons of addons that make their own (non-LibDBIcon) minimap button, found by global
+-- name wherever they are parented. Use /mmap names over a button to learn its name.
+local KNOWN_BUTTONS = { "ZygorGuidesViewerMapIcon" }
 
 local function MatchesAny(name, patterns)
 	for _, p in ipairs(patterns) do
@@ -48,17 +54,19 @@ end
 ---------------------------------------------------------------------------
 -- Which frames get collected
 ---------------------------------------------------------------------------
--- force = true for buttons LibDBIcon itself reports (no name/size guessing needed).
+-- force = true for buttons LibDBIcon reports and KNOWN_BUTTONS (no name/size guessing needed).
 local function IsCollectable(f, force)
 	if not f or isCollected[f] or f == bar then return false end
-	if not (f.GetObjectType and f.GetName) then return false end
+	if type(f) ~= "table" or not (f.GetObjectType and f.GetName) then return false end
 	if f.IsForbidden and f:IsForbidden() then return false end
 	if f.IsProtected and f:IsProtected() then return false end
 	local name = f:GetName()
 	if type(name) ~= "string" then return false end
 	if _G[name] == f and issecurevariable(name) then return false end -- a Blizzard frame
+	-- LibDBIcon buttons are always minimap buttons, even when the addon's name is on the skip
+	-- list (LibDBIcon10_Questie, LibDBIcon10_TomTom...), so check them before the skip list.
+	if force or name:find("^LibDBIcon10_") then return true end
 	if MatchesAny(name, SKIP_PATTERNS) then return false end
-	if force then return true end
 	if f:GetObjectType() ~= "Button" then return false end
 	local w, h = f:GetSize()
 	local big = math.max(w or 0, h or 0)
@@ -148,6 +156,10 @@ local function Collect(f)
 	f:SetScale(ScaleFor(f))
 	f:SetFrameLevel(bar:GetFrameLevel() + 2)
 	placing = false
+	-- No dragging in the bar: without this, LibDBIcon's (and similar) drag code moves the
+	-- button around the old round map every frame while the hooks below move it back.
+	-- Only this frame's drag is turned off; the owner's saved settings are left alone.
+	if f.RegisterForDrag then f:RegisterForDrag() end
 
 	-- If the owner moves its button (a LibDBIcon refresh, a drag around the old round map),
 	-- put it straight back into its slot.
@@ -173,17 +185,51 @@ local function ScanChildren(parent)
 	end
 end
 
+-- A button LibDBIcon has just made: collect it straight away (after combat if needed).
+local function OnIconCreated(_, button, name)
+	ns.RunOutOfCombat("ldbi:" .. tostring(name), function()
+		if IsCollectable(button, true) then
+			Collect(button)
+			Bar:QueueLayout()
+		end
+	end)
+end
+
 local function ScanLibDBIcon()
 	local lib = LibDBIcon()
-	if not lib then return end
+	if not lib then return 0 end
 	if not Bar.ldbiHooked and lib.RegisterCallback then
-		Bar.ldbiHooked = pcall(lib.RegisterCallback, Bar, "LibDBIcon_IconCreated", function() Bar:RequestScan() end)
+		Bar.ldbiHooked = pcall(lib.RegisterCallback, Bar, "LibDBIcon_IconCreated", OnIconCreated)
 	end
-	if not lib.GetButtonList then return end
-	for _, name in ipairs(lib:GetButtonList()) do
+	if not lib.GetButtonList then return 0 end
+	local list = lib:GetButtonList()
+	for _, name in ipairs(list) do
 		local f = (lib.GetMinimapButton and lib:GetMinimapButton(name)) or _G["LibDBIcon10_" .. name]
 		if IsCollectable(f, true) then Collect(f) end
 	end
+	return #list
+end
+
+local function ScanKnown()
+	for _, name in ipairs(KNOWN_BUTTONS) do
+		local f = _G[name]
+		if IsCollectable(f, true) then Collect(f) end
+	end
+end
+
+-- A cheap fingerprint of where new buttons could appear; a rescan only runs when it changes.
+local lastSignature
+local function NumChildren(f)
+	return (f and f.GetNumChildren) and f:GetNumChildren() or 0
+end
+local function Signature()
+	local known = 0
+	for i, name in ipairs(KNOWN_BUTTONS) do
+		if _G[name] then known = known + 2 ^ (i - 1) end
+	end
+	local lib = LibDBIcon()
+	local ldbi = (lib and lib.GetButtonList) and #lib:GetButtonList() or 0
+	return table.concat({ NumChildren(Minimap), NumChildren(MinimapBackdrop), NumChildren(MinimapCluster), ldbi, known }, ":")
 end
 
 -- Blizzard's event button: anchored into a slot while shown, never reparented.
@@ -204,11 +250,19 @@ end
 function Bar:Scan()
 	if not bar then return 0 end
 	ScanLibDBIcon()
+	ScanKnown()
 	ScanChildren(Minimap)
 	ScanChildren(MinimapBackdrop)
 	ScanChildren(MinimapCluster)
 	self:Layout()
+	lastSignature = Signature()
 	return #collected + ((self.eventButton and self.eventButton:IsShown()) and 1 or 0)
+end
+
+-- Rescans only if something changed since the last scan (for the late timed checks).
+function Bar:ScanIfChanged()
+	if not bar or Signature() == lastSignature then return end
+	self:RequestScan()
 end
 
 -- Looks for new buttons soon (at most once per half second, never in combat).
@@ -272,4 +326,7 @@ function Bar:Setup()
 	-- Slow addons make their buttons a little after login.
 	C_Timer.After(2, function() Bar:RequestScan() end)
 	C_Timer.After(10, function() Bar:RequestScan() end)
+	-- Some (Zygor...) are even later: look again, but only scan if something changed.
+	C_Timer.After(30, function() Bar:ScanIfChanged() end)
+	C_Timer.After(60, function() Bar:ScanIfChanged() end)
 end

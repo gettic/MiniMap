@@ -6,14 +6,15 @@ local Theme = {
 	-- Square mask for the minimap (a plain white square file that exists in every client).
 	mask = "Interface\\BUTTONS\\WHITE8X8",
 
-	-- Border: Blizzard NineSlice layout, checked by one of its atlases.
-	borderLayout = "GenericMetal",
-	borderCheckAtlas = "UI-Frame-GenericMetal-Corner",
-	borderOutset = 2, -- how far the border frame sits outside the map
+	-- Border: Blizzard's thin tooltip NineSlice layout, checked by one of its atlases. Its
+	-- pieces sit inside the frame (nothing sticks out), and its background piece is hidden.
+	borderLayout = "TooltipDefaultLayout",
+	borderCheckAtlas = "Tooltip-NineSlice-CornerTopLeft",
+	borderOutset = 3, -- how far the border frame sits outside the map
 
 	-- Fallback border when the layout or its atlas is missing.
 	fallbackEdgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-	fallbackEdgeSize = 12,
+	fallbackEdgeSize = 8,
 	fallbackEdgeColor = { 0.8, 0.8, 0.8, 1 },
 
 	-- Backgrounds (icon bar only; the map fills its own square).
@@ -25,7 +26,7 @@ local Theme = {
 	iconSize = 24,
 	iconGap = 2,
 	barPadding = 5,
-	barGap = 6, -- space between the map border and the bar (room for the metal corners)
+	barGap = 2, -- space between the map border and the bar
 
 	-- Player coordinates, moved inside the map's bottom edge.
 	coordsOffsetY = 4,
@@ -37,12 +38,34 @@ function Theme.HasAtlas(name)
 	return C_Texture.GetAtlasInfo(name) ~= nil
 end
 
+-- Border only: hides every NineSlice piece that isn't an edge or a corner (the tooltip
+-- layout's "Center" background would otherwise cover the map).
+local function HideFill(frame)
+	local layout = NineSliceUtil.GetLayout and NineSliceUtil.GetLayout(Theme.borderLayout)
+	local names = { Center = true }
+	if type(layout) == "table" then
+		for key, piece in pairs(layout) do
+			if type(piece) == "table" then names[key] = true end
+		end
+	end
+	for key in pairs(names) do
+		local tex = frame[key]
+		if type(key) == "string" and not (key:find("Corner") or key:find("Edge"))
+			and type(tex) == "table" and tex.Hide then
+			tex:Hide()
+		end
+	end
+end
+
 -- Gives `frame` a Blizzard border. The frame should be made with BackdropTemplate so the
 -- fallback works. Returns "nineslice", "backdrop" or nil.
 function Theme.ApplyBorder(frame)
 	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName and Theme.HasAtlas(Theme.borderCheckAtlas) then
 		local ok = pcall(NineSliceUtil.ApplyLayoutByName, frame, Theme.borderLayout)
-		if ok then return "nineslice" end
+		if ok then
+			HideFill(frame)
+			return "nineslice"
+		end
 	end
 	if frame.SetBackdrop then
 		frame:SetBackdrop({ edgeFile = Theme.fallbackEdgeFile, edgeSize = Theme.fallbackEdgeSize })

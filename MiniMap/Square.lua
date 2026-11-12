@@ -173,7 +173,8 @@ local function ScreenRect(f)
 	local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
 	if not (l and r and t and b) then return end
 	local s = f:GetEffectiveScale()
-	return l * s, r * s, t * s, b * s
+	local i = T.ArtInset and T.ArtInset(f) or 0 -- see-through art margin: hug the visible line
+	return (l + i) * s, (r - i) * s, (t - i) * s, (b + i) * s
 end
 
 function Square:FitSelection()

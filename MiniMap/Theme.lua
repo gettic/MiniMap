@@ -11,6 +11,9 @@ local Theme = {
 	borderLayout = "TooltipDefaultLayout",
 	borderCheckAtlas = "Tooltip-NineSlice-CornerTopLeft",
 	borderOutset = 3, -- how far the border frame sits outside the map
+	-- See-through art pixels between a bordered frame's edge and its visible line (tooltip
+	-- layout only; 0 for the fallback). Edit Mode's box is pulled in by this much per side.
+	selectionInset = 2,
 
 	-- Fallback border when the layout or its atlas is missing.
 	fallbackEdgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -112,21 +115,31 @@ end
 
 -- Gives `frame` a Blizzard border. The frame should be made with BackdropTemplate so the
 -- fallback works. Returns "nineslice", "backdrop" or nil.
+local borderKind = setmetatable({}, { __mode = "k" }) -- [our frame] = "nineslice" / "backdrop"
+
 function Theme.ApplyBorder(frame)
 	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName and Theme.HasAtlas(Theme.borderCheckAtlas) then
 		local ok = pcall(NineSliceUtil.ApplyLayoutByName, frame, Theme.borderLayout)
 		if ok then
 			HideFill(frame)
+			borderKind[frame] = "nineslice"
 			return "nineslice"
 		end
 	end
 	if frame.SetBackdrop then
+		borderKind[frame] = "backdrop"
 		frame:SetBackdrop({ edgeFile = Theme.fallbackEdgeFile, edgeSize = Theme.fallbackEdgeSize })
 		if frame.SetBackdropBorderColor then
 			frame:SetBackdropBorderColor(unpack(Theme.fallbackEdgeColor))
 		end
 		return "backdrop"
 	end
+end
+
+-- How far `frame`'s visible border sits inside its edge (own units): selectionInset for the
+-- tooltip layout, 0 for the fallback or no border.
+function Theme.ArtInset(frame)
+	return borderKind[frame] == "nineslice" and (Theme.selectionInset or 0) or 0
 end
 
 -- Dark see-through background inside `frame`.

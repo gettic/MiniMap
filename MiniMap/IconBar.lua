@@ -12,6 +12,10 @@ local collected = {}    -- list of addon buttons in the bar
 local isCollected = {}  -- [frame] = true
 local slotOf = {}       -- [frame] = slot index in the current layout
 local placing = false   -- true while we move a button ourselves (stops hook loops)
+local snapping = false  -- true while we size/scale a button ourselves (stops hook loops)
+local slotArt = {}      -- [button] = our slot overlay frame (child of the bar)
+local hiddenArt = {}    -- [texture] = true: foreign art we set to alpha 0
+local PlaceOne          -- defined below (used by Snap first)
 local headerUnder = false
 local layoutPending, scanPending = false, false
 local perRow, rowsUsed = 1, 1
@@ -34,7 +38,7 @@ local BUTTON_PATTERNS = {
 }
 -- Buttons of addons that make their own (non-LibDBIcon) minimap button, found by global
 -- name wherever they are parented. Use /mmap names over a button to learn its name.
-local KNOWN_BUTTONS = { "ZygorGuidesViewerMapIcon" }
+local KNOWN_BUTTONS = { "ZygorGuidesViewerMapIcon", "AllTheThings-Minimap" }
 
 local function MatchesAny(name, patterns)
 	for _, p in ipairs(patterns) do
@@ -84,8 +88,133 @@ local function ScaleFor(f)
 	return T.iconSize / big
 end
 
+---------------------------------------------------------------------------
+-- Uniform slots: every collected button is a 24 px square with its icon cropped to fill,
+-- the owner's round-minimap art hidden, and our slot art (Blizzard action-button frame,
+-- hover, pressed) on a frame of our own over it.
+---------------------------------------------------------------------------
+local function IsTexture(r)
+	return type(r) == "table" and r.GetObjectType and r:GetObjectType() == "Texture"
+end
+
+-- Is this texture one of the known round-minimap pieces (by file ID or path)?
+local function IsForeign(tex)
+	local fa = T.foreignArt
+	local id = tex.GetTextureFileID and tex:GetTextureFileID()
+	if id and fa.ids[id] then return true end
+	local p = tex.GetTexture and tex:GetTexture()
+	if type(p) == "number" then return fa.ids[p] == true end
+	if type(p) == "string" then
+		p = p:lower():gsub("/", "\\"):gsub("%.blp$", ""):gsub("%.tga$", "")
+		return fa.paths[p] == true
+	end
+	return false
+end
+
+-- The button's icon: its `icon`/`Icon` texture, else its largest texture that isn't foreign art
+-- or its highlight, preferring ones no bigger than the button was (rings stick out of it).
+local function FindIcon(f, maxSize)
+	local icon = f.icon or f.Icon
+	if IsTexture(icon) then return icon end
+	local hl = f.GetHighlightTexture and f:GetHighlightTexture()
+	local best, bestArea, fit, fitArea = nil, -1, nil, -1
+	for _, r in ipairs({ f:GetRegions() }) do
+		if IsTexture(r) and r ~= hl and not IsForeign(r) then
+			local w, h = r:GetSize()
+			w, h = w or 0, h or 0
+			local area = w * h
+			if area > bestArea then best, bestArea = r, area end
+			if w <= maxSize + 0.5 and h <= maxSize + 0.5 and area > fitArea then fit, fitArea = r, area end
+		end
+	end
+	return fit or best
+end
+
+local function MakeArt(parent, layer, spec)
+	local tex = parent:CreateTexture(nil, layer)
+	local usedAtlas = T.SetAtlasOr(tex, spec.atlas, spec.file)
+	if not usedAtlas and spec.fileScale then
+		local size = T.iconSize * spec.fileScale
+		tex:SetSize(size, size)
+		tex:SetPoint("CENTER", parent, "CENTER", 0, 0)
+	else
+		tex:SetAllPoints(parent)
+	end
+	if spec.blend then tex:SetBlendMode(spec.blend) end
+	return tex
+end
+
+-- Our slot art over a button. interactive = also hover and pressed art (not for Blizzard's
+-- event button, which keeps its own).
+local function AddSlot(f, interactive)
+	if slotArt[f] or not bar then return end
+	local o = CreateFrame("Frame", nil, bar)
+	o:SetAllPoints(f)
+	o:EnableMouse(false)
+	o:SetFrameStrata(f:GetFrameStrata()) -- same strata as its button, so it draws over it
+	o:SetFrameLevel(f:GetFrameLevel() + 1)
+	MakeArt(o, "OVERLAY", T.slot.frame)
+	slotArt[f] = o
+	if not interactive then return end
+	local hover = MakeArt(o, "ARTWORK", T.slot.hover)
+	local down = MakeArt(o, "ARTWORK", T.slot.down)
+	hover:Hide()
+	down:Hide()
+	f:HookScript("OnEnter", function() hover:Show() end)
+	f:HookScript("OnLeave", function() hover:Hide(); down:Hide() end)
+	f:HookScript("OnMouseDown", function() down:Show() end)
+	f:HookScript("OnMouseUp", function() down:Hide() end)
+end
+
+-- Makes an addon button a uniform slot. Out of combat only; never protected/forbidden frames.
+local function Normalize(f)
+	if not bar or InCombatLockdown() then return end
+	if (f.IsForbidden and f:IsForbidden()) or (f.IsProtected and f:IsProtected()) then return end
+	local size = T.iconSize
+	local ow, oh = f:GetSize()
+	local oldSize = math.max(ow or 0, oh or 0, size)
+	snapping = true
+	f:SetScale(1)
+	f:SetSize(size, size)
+	f:SetFrameStrata(bar:GetFrameStrata())
+	f:SetFrameLevel(bar:GetFrameLevel() + 2)
+	snapping = false
+
+	local icon = FindIcon(f, oldSize)
+	if icon then
+		local inset = T.slot.iconInset
+		icon:ClearAllPoints()
+		icon:SetPoint("TOPLEFT", f, "TOPLEFT", inset, -inset)
+		icon:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -inset, inset)
+		icon:SetTexCoord(unpack(T.slot.iconCoords))
+	end
+	-- Hide the owner's ring, background, highlight and anything bigger than the slot.
+	local hl = f.GetHighlightTexture and f:GetHighlightTexture()
+	for _, r in ipairs({ f:GetRegions() }) do
+		if IsTexture(r) and r ~= icon then
+			local w, h = r:GetSize()
+			if r == hl or IsForeign(r) or (w or 0) > size or (h or 0) > size then
+				r:SetAlpha(0)
+				hiddenArt[r] = true
+			end
+		end
+	end
+	AddSlot(f, true)
+end
+
+-- The owner changed the button's size or scale (a LibDBIcon refresh...): back to the slot.
+local function Snap(f)
+	ns.RunOutOfCombat("snap:" .. tostring(f:GetName()), function()
+		snapping = true
+		f:SetScale(1)
+		f:SetSize(T.iconSize, T.iconSize)
+		snapping = false
+		PlaceOne(f)
+	end)
+end
+
 -- Puts one button into its slot. Offsets are converted into the button's own scale.
-local function PlaceOne(f)
+function PlaceOne(f)
 	local i = slotOf[f]
 	if not (i and bar) then return end
 	local size, gap, pad = T.iconSize, T.iconGap, T.barPadding
@@ -136,6 +265,9 @@ function Bar:Layout()
 		slotOf[f] = i
 		PlaceOne(f)
 	end
+	for f, o in pairs(slotArt) do
+		o:SetShown(slotOf[f] ~= nil)
+	end
 end
 
 -- Layout on the next frame, once, however many times it is asked for.
@@ -153,9 +285,8 @@ local function Collect(f)
 	collected[#collected + 1] = f
 	placing = true
 	f:SetParent(bar)
-	f:SetScale(ScaleFor(f))
-	f:SetFrameLevel(bar:GetFrameLevel() + 2)
 	placing = false
+	Normalize(f)
 	-- No dragging in the bar: without this, LibDBIcon's (and similar) drag code moves the
 	-- button around the old round map every frame while the hooks below move it back.
 	-- Only this frame's drag is turned off; the owner's saved settings are left alone.
@@ -173,6 +304,23 @@ local function Collect(f)
 			placing = false
 			Bar:QueueLayout()
 		end
+	end)
+	-- Size and scale are the slot's: snap back if the owner changes them.
+	hooksecurefunc(f, "SetScale", function(self, s)
+		if not snapping and s ~= 1 then Snap(self) end
+	end)
+	hooksecurefunc(f, "SetSize", function(self, w, h)
+		if not snapping and (w ~= T.iconSize or h ~= T.iconSize) then Snap(self) end
+	end)
+	-- Strata is the bar's (T.layer, under other addons): back if the owner raises it.
+	hooksecurefunc(f, "SetFrameStrata", function(self, strata)
+		if snapping or strata == T.layer then return end
+		ns.RunOutOfCombat("strata:" .. tostring(self:GetName()), function()
+			snapping = true
+			self:SetFrameStrata(T.layer)
+			self:SetFrameLevel(bar:GetFrameLevel() + 2)
+			snapping = false
+		end)
 	end)
 	f:HookScript("OnShow", function() Bar:QueueLayout() end)
 	f:HookScript("OnHide", function() Bar:QueueLayout() end)
@@ -232,13 +380,16 @@ local function Signature()
 	return table.concat({ NumChildren(Minimap), NumChildren(MinimapBackdrop), NumChildren(MinimapCluster), ldbi, known }, ":")
 end
 
--- Blizzard's event button: anchored into a slot while shown, never reparented.
+-- Blizzard's event button: anchored into a slot while shown, never reparented. It keeps its
+-- own art and only gets our slot frame over it.
 local function HookEventButton()
 	local ev = EventButton()
 	if not ev or Bar.eventButton or (ev.IsProtected and ev:IsProtected()) then return end
+	if ev.IsForbidden and ev:IsForbidden() then return end
 	Bar.eventButton = ev
 	ev:SetScale(ScaleFor(ev))
 	ev:SetFrameLevel(bar:GetFrameLevel() + 2)
+	AddSlot(ev, false)
 	ev:HookScript("OnShow", function() Bar:QueueLayout() end)
 	ev:HookScript("OnHide", function() Bar:QueueLayout() end)
 	if MinimapCluster and MinimapCluster.ApplyExternalEventURLButtonAnchor then
@@ -279,11 +430,7 @@ end
 -- Which side of the map the bar is on (Edit Mode "Header Underneath")
 ---------------------------------------------------------------------------
 local function HeaderIsUnderneath()
-	if MinimapCluster and MinimapCluster.GetSettingValueBool and Enum and Enum.EditModeMinimapSetting then
-		local ok, value = pcall(MinimapCluster.GetSettingValueBool, MinimapCluster, Enum.EditModeMinimapSetting.HeaderUnderneath)
-		if ok then return value and true or false end
-	end
-	return false
+	return ns.Square.HeaderIsUnderneath()
 end
 
 function Bar:SetSide(under)
@@ -308,6 +455,7 @@ function Bar:Setup()
 	if not Minimap or bar then return end
 	-- A child of Minimap: follows Edit Mode position and size, and hides with the map.
 	bar = CreateFrame("Frame", "MiniMapForeverIconBar", Minimap, T.backdropTemplate)
+	bar:SetFrameStrata(T.layer) -- under other addons' frames; buttons follow in Normalize
 	bar:SetHeight(T.iconSize + 2 * T.barPadding)
 	bar:EnableMouse(false)
 	T.ApplyBorder(bar)

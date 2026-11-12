@@ -30,12 +30,65 @@ local Theme = {
 
 	-- Player coordinates, moved inside the map's bottom edge.
 	coordsOffsetY = 4,
+
+	-- Bar slots: every button gets the same square slot (iconSize), its icon inset and
+	-- cropped, and Blizzard's action-button frame, hover and pressed art over it.
+	-- `file` is the fallback when the atlas is missing; `fileScale` sizes a fallback file
+	-- whose art is bigger than its button (UI-Quickslot2: 66 px around a 36 px button).
+	slot = {
+		iconInset = 2,
+		iconCoords = { 0.08, 0.92, 0.08, 0.92 },
+		frame = { atlas = "UI-HUD-ActionBar-IconFrame", file = "Interface\\Buttons\\UI-Quickslot2", fileScale = 66 / 36 },
+		hover = { atlas = "UI-HUD-ActionBar-IconFrame-Mouseover", file = "Interface\\Buttons\\ButtonHilight-Square", blend = "ADD" },
+		down = { atlas = "UI-HUD-ActionBar-IconFrame-Down", file = "Interface\\Buttons\\UI-Quickslot-Depress" },
+	},
+
+	-- Round-minimap art other addons put on their buttons (LibDBIcon ring, background,
+	-- highlight). Hidden (alpha 0) in the bar. Paths: lower case, no extension.
+	foreignArt = {
+		ids = { [136430] = true, [136467] = true, [136477] = true },
+		paths = {
+			["interface\\minimap\\minimap-trackingborder"] = true,
+			["interface\\minimap\\ui-minimap-background"] = true,
+			["interface\\minimap\\ui-minimap-zoombutton-highlight"] = true,
+		},
+	},
+
+	-- Header strip behind Blizzard's zone/clock header (same border and background as the bar).
+	headerPad = 2,        -- gap between the map border and the strip (same as barGap)
+	headerHeight = 27,
+	headerMinWidth = 196, -- the header pieces need about 188 px
+	headerOffsetX = -1,   -- centres tracking + zone text + clock in the strip
+	headerTextY = 2,      -- zone button (23 px) inside the 27 px strip
+
+	-- Mail and addon compartment: in the map's corners, this far in (map pixels).
+	cornerInset = 5,
+
+	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
+	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",
+	dielSize = 22,
+	dielInset = 4,
+
+	-- Frame strata for the whole map (map, border, header, bar, buttons, corner pieces), so
+	-- other addons' frames draw over it. The only place this is set.
+	layer = "BACKGROUND",
 }
 ns.Theme = Theme
 
 function Theme.HasAtlas(name)
 	if not (name and C_Texture and C_Texture.GetAtlasInfo) then return false end
 	return C_Texture.GetAtlasInfo(name) ~= nil
+end
+
+-- Sets `atlas` on `tex` when the client has it, otherwise the fallback `file`.
+-- Returns true when the atlas was used.
+function Theme.SetAtlasOr(tex, atlas, file)
+	if atlas and tex.SetAtlas and Theme.HasAtlas(atlas) then
+		tex:SetAtlas(atlas)
+		return true
+	end
+	if file then tex:SetTexture(file) end
+	return false
 end
 
 -- Border only: hides every NineSlice piece that isn't an edge or a corner (the tooltip

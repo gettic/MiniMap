@@ -137,6 +137,9 @@ events:SetScript("OnEvent", function(_, event, arg1)
 			if arg1 == "Blizzard_HybridMinimap" and ns.Square.active then
 				ns.SafeRun("Square", ns.Square.ApplyMask, ns.Square)
 			end
+			if arg1 == "Blizzard_TimeManager" and ns.Square.active then
+				ns.SafeRun("Layer", ns.Square.ApplyLayer, ns.Square) -- clock button loads late
+			end
 			if ns.IconBar.active then ns.IconBar:RequestScan() end
 		end
 	elseif event == "PLAYER_LOGIN" then

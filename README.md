@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-> **Beta.** Version 0.1.0-beta.2 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+> **Beta.** Version 0.1.0-beta.3 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)
@@ -17,10 +17,13 @@ A square minimap with a bar under it that holds the minimap buttons. A World of 
 | Part | What you get |
 |---|---|
 | Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border. It stays square with "Rotate Minimap" on. |
-| Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes) and Zygor's icon. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
-| Header | Blizzard's own zone name, clock, calendar, tracking and addon-compartment buttons stay where Blizzard puts them. |
+| Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
+| Header | The zone name, clock, calendar and tracking buttons sit in their own bordered strip just above the map. |
+| Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment in the top-right corner. |
+| Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it. |
+| Layer | The map, its border, the header strip, the bar and the buttons sit in the background layer, so other addons' windows always draw over them. |
 
 The bar hides itself when it has no buttons. Blizzard's event button also goes into the bar while an event is on.
 
@@ -43,7 +46,7 @@ Mini Map works by itself as soon as you log in. There are no settings to change.
 |---|---|
 | Drag to move | The map, its border and the button bar move together. |
 | Size | The map, border, bar and buttons scale together. |
-| Header Underneath | The header goes under the map, and the button bar moves above the map. |
+| Header Underneath | The header strip goes under the map and the button bar above it. The mail icon moves to the bottom-left corner and the day/night disc to the top-left corner. The addon compartment stays top-right, so it never covers the zoom buttons. |
 | Rotate Minimap | The map turns inside the square. |
 | Icon Size | The map markers resize as normal. |
 
@@ -78,7 +81,7 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Locale.lua` | Every text the player sees. |
 | `Theme.lua` | All art, sizes and colours in one table. |
 | `Core.lua` | Start-up, saved settings, combat queue, other-addon check, `/mmap`. |
-| `Square.lua` | Square mask, hiding the round art, border, coordinates. |
+| `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
 | `IconBar.lua` | Finding minimap buttons and laying out the bar. |
 
 Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map.

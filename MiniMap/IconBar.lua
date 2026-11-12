@@ -242,6 +242,55 @@ local function HideArt(tex)
 	end
 end
 
+-- Popups a button opens (Zygor's setup box...): a child frame of a collected button that is
+-- bigger than the slot or reaches outside the button. They inherit the bar's strata and level,
+-- so neighbour buttons could draw over them; they are raised to bar level + T.popupLevel
+-- (same strata). Small children inside the slot (glows, counters) are left alone.
+local popupHooked = {}  -- [child frame] = true: OnShow hook in place
+
+local function Usable(c)
+	return not ((c.IsForbidden and c:IsForbidden()) or (c.IsProtected and c:IsProtected()))
+end
+
+local function IsPopup(c, f)
+	local slot = T.iconSize + 0.5
+	local w, h = c:GetSize()
+	if (w or 0) > slot or (h or 0) > slot then return true end
+	local cl, cb, cw, ch = c:GetRect()
+	local fl, fb, fw, fh = f:GetRect()
+	if not (cl and cw and fl and fw) then return false end
+	local cs, fs = c:GetEffectiveScale(), f:GetEffectiveScale()
+	cl, cb, cw, ch = cl * cs, cb * cs, cw * cs, ch * cs
+	fl, fb, fw, fh = fl * fs, fb * fs, fw * fs, fh * fs
+	local e = 1
+	return cl < fl - e or cb < fb - e or cl + cw > fl + fw + e or cb + ch > fb + fh + e
+end
+
+local function RaisePopup(c, f)
+	if not bar or InCombatLockdown() or not Usable(c) or not IsPopup(c, f) then return end
+	local level = bar:GetFrameLevel() + T.popupLevel
+	if c:GetFrameLevel() < level then c:SetFrameLevel(level) end
+end
+
+-- Hooks OnShow (once) on every child frame of a collected button and raises the shown popups.
+local function WatchChildren(f)
+	if not (f.GetChildren and Usable(f)) then return end
+	for _, c in ipairs({ f:GetChildren() }) do
+		if Usable(c) then
+			if not popupHooked[c] and c.HookScript then
+				popupHooked[c] = true
+				c:HookScript("OnShow", function(self)
+					-- Shown in combat: raised once combat ends (if still shown).
+					ns.RunOutOfCombat("popup:" .. tostring(self), function()
+						if self:IsShown() then RaisePopup(self, f) end
+					end)
+				end)
+			end
+			if c:IsShown() then RaisePopup(c, f) end
+		end
+	end
+end
+
 -- Makes an addon button a uniform slot. Out of combat only; never protected/forbidden frames.
 local function Normalize(f)
 	if not bar or InCombatLockdown() then return end
@@ -283,6 +332,7 @@ local function Normalize(f)
 		end
 	end
 	AddSlot(f, true)
+	WatchChildren(f)
 end
 
 -- The owner changed the button's size or scale (a LibDBIcon refresh...): back to the slot.
@@ -352,6 +402,9 @@ function Bar:Layout()
 	for f, o in pairs(slotArt) do
 		o:SetShown(slotOf[f] ~= nil)
 	end
+	if not InCombatLockdown() then
+		for _, f in ipairs(collected) do WatchChildren(f) end
+	end
 	ns.Square:QueueFit() -- bar height or side changed: Edit Mode box follows
 end
 
@@ -405,8 +458,13 @@ local function Collect(f)
 			self:SetFrameStrata(T.layer)
 			self:SetFrameLevel(bar:GetFrameLevel() + 2)
 			snapping = false
+			WatchChildren(self) -- the owner likely raised it for a popup: keep that one on top
 		end)
 	end)
+	-- A popup made on the first click or hover isn't watched yet: look once the click/hover is done.
+	local function WatchSoon() C_Timer.After(0, function() WatchChildren(f) end) end
+	f:HookScript("OnMouseUp", WatchSoon)
+	f:HookScript("OnEnter", WatchSoon)
 	f:HookScript("OnShow", function() Bar:QueueLayout() end)
 	f:HookScript("OnHide", function() Bar:QueueLayout() end)
 end

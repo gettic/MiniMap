@@ -75,6 +75,9 @@ local Theme = {
 	-- Frame strata for the whole map (map, border, header, bar, buttons, corner pieces), so
 	-- other addons' frames draw over it. The only place this is set.
 	layer = "BACKGROUND",
+	-- Popups a bar button opens (a child frame bigger than its slot or reaching outside it) sit
+	-- this many levels above the bar, over every slot (+2) and slot overlay (+3). Same strata.
+	popupLevel = 20,
 }
 ns.Theme = Theme
 

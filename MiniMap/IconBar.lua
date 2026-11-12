@@ -252,6 +252,20 @@ local function Usable(c)
 	return not ((c.IsForbidden and c:IsForbidden()) or (c.IsProtected and c:IsProtected()))
 end
 
+-- Puts a collected button in the bar's strata at bar level + 2. LibDBIcon locks its buttons
+-- (SetFixedFrameStrata/SetFixedFrameLevel(true), MEDIUM 8), and a locked frame ignores
+-- SetFrameStrata/SetFrameLevel, so the locks are taken off first. They stay off: the button is
+-- the bar's child now and should follow the bar. Out of combat, not protected/forbidden.
+local function ForceLayer(f)
+	if not bar or InCombatLockdown() or not Usable(f) then return end
+	snapping = true
+	if f.SetFixedFrameStrata then f:SetFixedFrameStrata(false) end
+	if f.SetFixedFrameLevel then f:SetFixedFrameLevel(false) end
+	f:SetFrameStrata(T.layer)
+	f:SetFrameLevel(bar:GetFrameLevel() + 2)
+	snapping = false
+end
+
 local function IsPopup(c, f)
 	local slot = T.iconSize + 0.5
 	local w, h = c:GetSize()
@@ -311,9 +325,13 @@ end
 -- A frame made shown never fires OnShow, and an owner can make its popup any time (Zygor's setup
 -- box comes late): look at every collected button's children once a second, out of combat.
 -- Cheap: a few buttons with a few children each; RaisePopup only acts on shown popups set too low.
+-- Also the safety net for strata: a button that drifted out of the bar's strata goes back.
 local function WatchAll()
 	if InCombatLockdown() then return end
-	for _, f in ipairs(collected) do WatchChildren(f) end
+	for _, f in ipairs(collected) do
+		if f:GetFrameStrata() ~= T.layer then ForceLayer(f) end
+		WatchChildren(f)
+	end
 end
 
 -- Makes an addon button a uniform slot. Out of combat only; never protected/forbidden frames.
@@ -331,9 +349,8 @@ local function Normalize(f)
 	snapping = true
 	f:SetScale(1)
 	f:SetSize(size, size)
-	f:SetFrameStrata(bar:GetFrameStrata())
-	f:SetFrameLevel(bar:GetFrameLevel() + 2)
 	snapping = false
+	ForceLayer(f)
 
 	local icon = FindIcon(f, oldSize, sizes)
 	local normal = f.GetNormalTexture and f:GetNormalTexture()
@@ -477,10 +494,7 @@ local function Collect(f)
 	hooksecurefunc(f, "SetFrameStrata", function(self, strata)
 		if snapping or strata == T.layer then return end
 		ns.RunOutOfCombat("strata:" .. tostring(self:GetName()), function()
-			snapping = true
-			self:SetFrameStrata(T.layer)
-			self:SetFrameLevel(bar:GetFrameLevel() + 2)
-			snapping = false
+			ForceLayer(self)
 			WatchChildren(self) -- the owner likely raised it for a popup: keep that one on top
 		end)
 	end)

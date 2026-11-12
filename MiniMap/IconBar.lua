@@ -221,6 +221,27 @@ local function AddSlot(f, interactive)
 	f:HookScript("OnMouseUp", function() down:Hide() end)
 end
 
+-- Hides a texture (alpha 0) and keeps it hidden: if its owner raises the alpha again (Sonah's
+-- LibDBIcon ring did), it goes straight back to 0 while hiddenArt[tex] is true. Hooked once.
+local hookedAlpha = {}  -- [texture] = true: SetAlpha hook in place
+local settingAlpha = false
+local function KeepHidden(tex, a)
+	if settingAlpha or not hiddenArt[tex] or not a or a <= 0 then return end
+	settingAlpha = true
+	tex:SetAlpha(0)
+	settingAlpha = false
+end
+local function HideArt(tex)
+	hiddenArt[tex] = true
+	settingAlpha = true
+	tex:SetAlpha(0)
+	settingAlpha = false
+	if not hookedAlpha[tex] then
+		hookedAlpha[tex] = true
+		hooksecurefunc(tex, "SetAlpha", KeepHidden)
+	end
+end
+
 -- Makes an addon button a uniform slot. Out of combat only; never protected/forbidden frames.
 local function Normalize(f)
 	if not bar or InCombatLockdown() then return end
@@ -258,10 +279,7 @@ local function Normalize(f)
 				local w, h = r:GetSize()
 				hide = (w or 0) > size or (h or 0) > size
 			end
-			if hide then
-				r:SetAlpha(0)
-				hiddenArt[r] = true
-			end
+			if hide then HideArt(r) end
 		end
 	end
 	AddSlot(f, true)

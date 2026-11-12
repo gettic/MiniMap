@@ -266,13 +266,28 @@ local function IsPopup(c, f)
 	return cl < fl - e or cb < fb - e or cl + cw > fl + fw + e or cb + ch > fb + fh + e
 end
 
+local raising = false    -- true while we set a popup's level ourselves
+local levelHooked = {}   -- [popup] = true: SetFrameLevel hook in place
+
 local function RaisePopup(c, f)
-	if not bar or InCombatLockdown() or not Usable(c) or not IsPopup(c, f) then return end
+	if raising or not bar or InCombatLockdown() or not Usable(c) or not IsPopup(c, f) then return end
 	local level = bar:GetFrameLevel() + T.popupLevel
-	if c:GetFrameLevel() < level then c:SetFrameLevel(level) end
+	if c:GetFrameLevel() < level then
+		raising = true
+		c:SetFrameLevel(level)
+		raising = false
+	end
+	-- The owner setting the popup's level itself (e.g. parent + 1 on each show): raise it again.
+	if not levelHooked[c] then
+		levelHooked[c] = true
+		hooksecurefunc(c, "SetFrameLevel", function(self)
+			if not raising and self:IsShown() then RaisePopup(self, f) end
+		end)
+	end
 end
 
 -- Hooks OnShow (once) on every child frame of a collected button and raises the shown popups.
+-- OnShow also looks again on the next frame: owners often size and place a popup after Show.
 local function WatchChildren(f)
 	if not (f.GetChildren and Usable(f)) then return end
 	for _, c in ipairs({ f:GetChildren() }) do
@@ -281,14 +296,24 @@ local function WatchChildren(f)
 				popupHooked[c] = true
 				c:HookScript("OnShow", function(self)
 					-- Shown in combat: raised once combat ends (if still shown).
-					ns.RunOutOfCombat("popup:" .. tostring(self), function()
+					local function Raise()
 						if self:IsShown() then RaisePopup(self, f) end
-					end)
+					end
+					ns.RunOutOfCombat("popup:" .. tostring(self), Raise)
+					C_Timer.After(0, function() ns.RunOutOfCombat("popup:" .. tostring(self), Raise) end)
 				end)
 			end
 			if c:IsShown() then RaisePopup(c, f) end
 		end
 	end
+end
+
+-- A frame made shown never fires OnShow, and an owner can make its popup any time (Zygor's setup
+-- box comes late): look at every collected button's children once a second, out of combat.
+-- Cheap: a few buttons with a few children each; RaisePopup only acts on shown popups set too low.
+local function WatchAll()
+	if InCombatLockdown() then return end
+	for _, f in ipairs(collected) do WatchChildren(f) end
 end
 
 -- Makes an addon button a uniform slot. Out of combat only; never protected/forbidden frames.
@@ -402,9 +427,7 @@ function Bar:Layout()
 	for f, o in pairs(slotArt) do
 		o:SetShown(slotOf[f] ~= nil)
 	end
-	if not InCombatLockdown() then
-		for _, f in ipairs(collected) do WatchChildren(f) end
-	end
+	WatchAll()
 	ns.Square:QueueFit() -- bar height or side changed: Edit Mode box follows
 end
 
@@ -460,6 +483,11 @@ local function Collect(f)
 			snapping = false
 			WatchChildren(self) -- the owner likely raised it for a popup: keep that one on top
 		end)
+	end)
+	-- A new level on the button (ours or the owner's) moves its children with it, popups
+	-- included: raise them again.
+	hooksecurefunc(f, "SetFrameLevel", function(self)
+		ns.RunOutOfCombat("popups:" .. tostring(self:GetName()), function() WatchChildren(self) end)
 	end)
 	-- A popup made on the first click or hover isn't watched yet: look once the click/hover is done.
 	local function WatchSoon() C_Timer.After(0, function() WatchChildren(f) end) end
@@ -615,6 +643,8 @@ function Bar:Setup()
 	HookEventButton()
 
 	self:Scan()
+	-- Popups buttons make at any time (see WatchAll).
+	if C_Timer.NewTicker then C_Timer.NewTicker(1, WatchAll) end
 	-- Slow addons make their buttons a little after login.
 	C_Timer.After(2, function() Bar:RequestScan() end)
 	C_Timer.After(10, function() Bar:RequestScan() end)

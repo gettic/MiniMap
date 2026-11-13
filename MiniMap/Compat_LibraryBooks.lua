@@ -5,6 +5,7 @@
 -- (the corners), else onto the square's edge. Pins inside the circle are never touched.
 -- Only Library Books' own pins (unprotected frames, recognised by their fields) are moved.
 local ADDON, ns = ...
+local T = ns.Theme
 
 local Books = {}
 ns.Books = Books
@@ -71,6 +72,9 @@ local function HookChildren(...)
 		local f = select(i, ...)
 		if not hooked[f] and IsBooksPin(f) then
 			hooked[f] = true
+			-- Library Books makes its pins MEDIUM once (at creation): bring them into the map's
+			-- layer, so they sit under the coordinates and other addons' windows like the map.
+			if f.SetFrameStrata and f:GetFrameStrata() ~= T.layer then f:SetFrameStrata(T.layer) end
 			hooksecurefunc(f, "UpdatePosition", AfterUpdate)
 			AfterUpdate(f)
 		end

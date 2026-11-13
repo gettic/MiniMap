@@ -69,10 +69,11 @@ end
 function Square:CreateBorder()
 	if self.border then return end
 	local b = CreateFrame("Frame", "MiniMapForeverBorder", Minimap, T.backdropTemplate)
-	b:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -T.borderOutset, T.borderOutset)
-	b:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", T.borderOutset, -T.borderOutset)
 	b:EnableMouse(false)
-	T.ApplyBorder(b)
+	T.ApplyBorder(b) -- first: the outsets depend on which border kind the client supports
+	local oL, oR, oT, oB = T.BorderOutset(b)
+	b:SetPoint("TOPLEFT", Minimap, "TOPLEFT", -oL, oT)
+	b:SetPoint("BOTTOMRIGHT", Minimap, "BOTTOMRIGHT", oR, -oB)
 	self.border = b
 end
 
@@ -83,7 +84,7 @@ function Square:PlaceCoords()
 	if not (coords and coords.ClearAllPoints) then return end
 	coords:ClearAllPoints()
 	coords:SetPoint("BOTTOM", Minimap, "BOTTOM", 0, T.coordsOffsetY)
-	coords:SetFrameLevel(Minimap:GetFrameLevel() + 5)
+	coords:SetFrameLevel(Minimap:GetFrameLevel() + T.coordsLevel)
 end
 
 -- Dark box behind Blizzard's coordinates (our own frame, under the text). Blizzard writes the
@@ -135,7 +136,7 @@ function Square:CreateCoordsBox()
 	if not (text and coords.HookScript and text.GetStringWidth) then return end
 	local box = CreateFrame("Frame", "MiniMapForeverCoordsBox", Minimap)
 	box:EnableMouse(false)
-	box:SetFrameLevel(Minimap:GetFrameLevel() + 4) -- under PlayerCoords (+5)
+	box:SetFrameLevel(Minimap:GetFrameLevel() + T.coordsBoxLevel) -- under PlayerCoords
 	local tex = box:CreateTexture(nil, "BACKGROUND")
 	tex:SetAllPoints(box)
 	T.SetAtlasOr(tex, T.coordsBox.atlas, T.coordsBox.file or T.coordsBox.fallback)
@@ -219,7 +220,7 @@ function Square:CreateHeader()
 	if self.header or not self.border then return end
 	local h = CreateFrame("Frame", "MiniMapForeverHeader", self.border, T.backdropTemplate)
 	h:EnableMouse(false)
-	T.ApplyBorder(h)
+	T.ApplyBorder(h, true)
 	T.AddBackground(h)
 	self.header = h
 end
@@ -234,28 +235,31 @@ function Square:PlaceHeader(under)
 	local bs, zs = b:GetEffectiveScale(), zone:GetEffectiveScale()
 	local s = (bs and bs > 0 and zs and zs > 0) and zs / bs or 1
 	h:SetScale(s)
-	local mapWidth = Minimap:GetWidth() + 2 * T.borderOutset
-	h:SetSize(math.max(mapWidth / s, T.headerMinWidth), T.headerHeight)
+	local oL, oR = T.BorderOutset(b)
+	local mapWidth = Minimap:GetWidth() + oL + oR
+	local height = T.HeaderHeight(h)
+	h:SetSize(math.max(mapWidth / s, T.headerMinWidth), height)
 	h:SetFrameStrata(T.layer)
 	h:SetFrameLevel(math.max(0, MinimapCluster:GetFrameLevel()))
-	local gap = T.headerPad / s -- map pixels -> strip units
+	local gap = T.StripGap(T.headerPad, b, under and "BOTTOM" or "TOP", h, under and "TOP" or "BOTTOM", s) / s -- map px -> strip units
+	local textY = T.headerTextY + (height - T.headerHeight) / 2 -- taller strip: zone stays centred
 	StandIn(zone)
 	h:ClearAllPoints()
 	zone:ClearAllPoints()
 	if under then
 		h:SetPoint("TOP", b, "BOTTOM", 0, -gap)
-		zone:SetPoint("TOP", h, "TOP", T.headerOffsetX, -T.headerTextY)
+		zone:SetPoint("TOP", h, "TOP", T.headerOffsetX, -textY)
 	else
 		h:SetPoint("BOTTOM", b, "TOP", 0, gap)
-		zone:SetPoint("BOTTOM", h, "BOTTOM", T.headerOffsetX, T.headerTextY)
+		zone:SetPoint("BOTTOM", h, "BOTTOM", T.headerOffsetX, textY)
 	end
 	h:Show()
 end
 
 -- Mail (IndicatorFrame) top-left inside the map (bottom-left with Header Underneath: the
--- day/night disc then takes the top-left). The addon compartment always goes bottom-right,
--- on the right edge just above Blizzard's zoom buttons and their 40 px hover box (they own
--- the corner itself and must stay clickable). Out of combat (square-pieces queue).
+-- day/night disc then takes the top-left). The addon compartment goes to T.compartmentPoint
+-- (top-right; Blizzard's zoom buttons own the bottom-right corner and must stay clickable).
+-- Out of combat (square-pieces queue).
 -- `inX`/`inY`: extra map pixels inward (beyond cornerInset) from the corner's sides.
 local function PutInCorner(f, point, inX, inY)
 	if not Usable(f) then return end
@@ -309,8 +313,12 @@ local function ScreenRect(f)
 	local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
 	if not (l and r and t and b) then return end
 	local s = f:GetEffectiveScale()
-	local i = T.ArtInset and T.ArtInset(f) or 0 -- see-through art margin: hug the visible line
-	return (l + i) * s, (r - i) * s, (t - i) * s, (b + i) * s
+	-- See-through art margin per side: hug the visible line.
+	local iL, iR, iT, iB
+	if T.ArtInset then iL, iR, iT, iB = T.ArtInset(f) end
+	iL = iL or 0
+	iR, iT, iB = iR or iL, iT or iL, iB or iL
+	return (l + iL) * s, (r - iR) * s, (t - iT) * s, (b + iB) * s
 end
 
 -- Edit Mode's live toggles (Header Underneath) re-lay the cluster but never re-anchor it, so a

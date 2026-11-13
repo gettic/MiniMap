@@ -26,7 +26,10 @@ Bar.shownCount = 0
 -- even before the game has laid the frames out).
 local function BarWidth()
 	local w = Minimap:GetWidth()
-	if ns.Square.border then w = w + 2 * T.borderOutset end
+	if ns.Square.border then
+		local oL, oR = T.BorderOutset(ns.Square.border)
+		w = w + oL + oR
+	end
 	return w
 end
 
@@ -392,7 +395,7 @@ end
 function PlaceOne(f)
 	local i = slotOf[f]
 	if not (i and bar) then return end
-	local size, gap, pad = T.iconSize, T.iconGap, T.barPadding
+	local size, gap, pad = T.iconSize, T.iconGap, T.BarPadding(bar)
 	local row = math.floor((i - 1) / perRow)
 	local col = (i - 1) % perRow
 	local inRow = math.min(perRow, Bar.shownCount - row * perRow)
@@ -432,7 +435,7 @@ function Bar:Layout()
 		return
 	end
 
-	local size, gap, pad = T.iconSize, T.iconGap, T.barPadding
+	local size, gap, pad = T.iconSize, T.iconGap, T.BarPadding(bar)
 	perRow = math.max(1, math.floor((BarWidth() - 2 * pad + gap) / (size + gap)))
 	rowsUsed = math.ceil(#shown / perRow)
 	bar:SetHeight(rowsUsed * size + (rowsUsed - 1) * gap + 2 * pad)
@@ -622,13 +625,15 @@ function Bar:SetSide(under)
 	headerUnder = under and true or false
 	if not bar then return end
 	local anchor = (ns.Square.border) or Minimap
+	-- Same units: bar and border are both children of Minimap at scale 1.
+	local g = T.StripGap(T.barGap, anchor, headerUnder and "TOP" or "BOTTOM", bar, headerUnder and "BOTTOM" or "TOP", 1)
 	bar:ClearAllPoints()
 	if headerUnder then
-		bar:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, T.barGap)
-		bar:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, T.barGap)
+		bar:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, g)
+		bar:SetPoint("BOTTOMRIGHT", anchor, "TOPRIGHT", 0, g)
 	else
-		bar:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -T.barGap)
-		bar:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -T.barGap)
+		bar:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -g)
+		bar:SetPoint("TOPRIGHT", anchor, "BOTTOMRIGHT", 0, -g)
 	end
 	self:QueueLayout()
 	ns.Square:QueueFit()
@@ -642,9 +647,9 @@ function Bar:Setup()
 	-- A child of Minimap: follows Edit Mode position and size, and hides with the map.
 	bar = CreateFrame("Frame", "MiniMapForeverIconBar", Minimap, T.backdropTemplate)
 	bar:SetFrameStrata(T.layer) -- under other addons' frames; buttons follow in Normalize
-	bar:SetHeight(T.iconSize + 2 * T.barPadding)
 	bar:EnableMouse(false)
-	T.ApplyBorder(bar)
+	T.ApplyBorder(bar, true)
+	bar:SetHeight(T.iconSize + 2 * T.BarPadding(bar))
 	T.AddBackground(bar)
 	bar:Hide()
 	self.frame = bar

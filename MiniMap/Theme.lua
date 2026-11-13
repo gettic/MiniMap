@@ -6,19 +6,37 @@ local Theme = {
 	-- Square mask for the minimap (a plain white square file that exists in every client).
 	mask = "Interface\\BUTTONS\\WHITE8X8",
 
-	-- Border: Blizzard's thin tooltip NineSlice layout, checked by one of its atlases. Its
-	-- pieces sit inside the frame (nothing sticks out), and its background piece is hidden.
-	borderLayout = "TooltipDefaultLayout",
-	borderCheckAtlas = "Tooltip-NineSlice-CornerTopLeft",
-	borderOutset = 3, -- how far the border frame sits outside the map
-	-- See-through art pixels between a bordered frame's edge and its visible line (tooltip
-	-- layout only; 0 for the fallback). Edit Mode's box is pulled in by this much per side.
-	selectionInset = 2,
-
-	-- Fallback border when the layout or its atlas is missing.
-	fallbackEdgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-	fallbackEdgeSize = 8,
-	fallbackEdgeColor = { 0.8, 0.8, 0.8, 1 },
+	-- Border of the map, header strip and icon bar. A theme swaps this whole table.
+	-- 1st choice ("sliced"): Blizzard's main action bar frame atlas, cut into 4 corners + 4
+	--   edges from its own atlas info (file, texcoords, slice margins read live from
+	--   C_Texture.GetAtlasInfo); no centre piece, so nothing covers the map.
+	-- 2nd ("nineslice"): the thin tooltip NineSlice layout (centre hidden).
+	-- 3rd ("backdrop"): the tooltip border file via BackdropTemplate.
+	-- Sides in the tables below are in the order Left, Top, Right, Bottom.
+	border = {
+		atlas = "UI-HUD-ActionBar-Frame",
+		margins = { 20, 25, 20, 25 }, -- atlas px; only used when the client has no sliceData
+		shadow = { 2, 2, 6, 5 },      -- see-through shadow per side, atlas px (Blizzard draws the
+		                              -- bar art 4/4 px past top-left, 8/7 px past bottom-right)
+		scale = 0.5,                  -- map border: margins drawn at this size (the file is 2x)
+		stripScale = 0.35,            -- header strip and icon bar (only 31-40 px tall)
+		overlap = 2,                  -- map px the inner edge of the frame reaches over the map
+		gap = 2,                      -- visible gap between the map's frame and a strip's frame
+		headerHeight = 31,            -- header strip height with this frame
+		barPadding = 8,               -- icon bar padding with this frame
+		drawLayer = "BORDER",
+		-- Fallback 1: tooltip layout, checked by one of its atlases; 3 px outside the map,
+		-- 2 px see-through margin (Edit Mode's box is pulled in by it).
+		layout = "TooltipDefaultLayout",
+		checkAtlas = "Tooltip-NineSlice-CornerTopLeft",
+		layoutOutset = 3,
+		layoutInset = 2,
+		-- Fallback 2: backdrop edge file.
+		edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+		edgeSize = 8,
+		edgeColor = { 0.8, 0.8, 0.8, 1 },
+		edgeOutset = 3,
+	},
 
 	-- Backgrounds (icon bar only; the map fills its own square).
 	bgTexture = "Interface\\BUTTONS\\WHITE8X8",
@@ -29,10 +47,14 @@ local Theme = {
 	iconSize = 24,
 	iconGap = 2,
 	barPadding = 5,
-	barGap = 2, -- space between the map border and the bar
+	barGap = 2, -- space between the map border and the bar (fallback borders)
 
 	-- Player coordinates, moved inside the map's bottom edge.
 	coordsOffsetY = 4,
+	-- Frame levels above Minimap's: coordinates over their box, both over map pins (Library
+	-- Books pins sit at +5 once Compat_LibraryBooks moves them into `layer`).
+	coordsLevel = 7,
+	coordsBoxLevel = 6,
 	-- Dark box behind them: Blizzard's tooltip background file tinted black (fallback: plain
 	-- white square, same tint). `atlas` (checked first) is free for a theme. padX/padY: map px
 	-- around the text; throttle: seconds between size checks.
@@ -70,18 +92,18 @@ local Theme = {
 	},
 
 	-- Header strip behind Blizzard's zone/clock header (same border and background as the bar).
-	headerPad = 2,        -- gap between the map border and the strip (same as barGap)
-	headerHeight = 27,
+	headerPad = 2,        -- gap between the map border and the strip (fallback borders)
+	headerHeight = 27,    -- fallback borders; border.headerHeight with the action bar frame
 	headerMinWidth = 196, -- the header pieces need about 188 px
 	headerOffsetX = -1,   -- centres tracking + zone text + clock in the strip
 	headerTextY = 2,      -- zone button (23 px) inside the 27 px strip
 
 	-- Mail and addon compartment: in the map's corners, this far in (map pixels).
 	cornerInset = 5,
-	-- Addon compartment (addon counter): bottom-right, raised this many map px more so it sits
-	-- above Blizzard's zoom buttons and their 40 px hover box (which reaches 42 px up).
-	compartmentPoint = "BOTTOMRIGHT",
-	compartmentRaise = 39, -- 5 + 39 = 44 px up
+	-- Addon compartment (addon counter): top-right corner. compartmentRaise: extra map px in from
+	-- the corner's top/bottom side (e.g. 39 with "BOTTOMRIGHT" clears the zoom buttons' hover box).
+	compartmentPoint = "TOPRIGHT",
+	compartmentRaise = 0,
 
 	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
 	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",
@@ -121,7 +143,7 @@ end
 -- Border only: hides every NineSlice piece that isn't an edge or a corner (the tooltip
 -- layout's "Center" background would otherwise cover the map).
 local function HideFill(frame)
-	local layout = NineSliceUtil.GetLayout and NineSliceUtil.GetLayout(Theme.borderLayout)
+	local layout = NineSliceUtil.GetLayout and NineSliceUtil.GetLayout(Theme.border.layout)
 	local names = { Center = true }
 	if type(layout) == "table" then
 		for key, piece in pairs(layout) do
@@ -137,13 +159,111 @@ local function HideFill(frame)
 	end
 end
 
--- Gives `frame` a Blizzard border. The frame should be made with BackdropTemplate so the
--- fallback works. Returns "nineslice", "backdrop" or nil.
-local borderKind = setmetatable({}, { __mode = "k" }) -- [our frame] = "nineslice" / "backdrop"
+local function IsNum(v) return type(v) == "number" and v == v end
 
-function Theme.ApplyBorder(frame)
-	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName and Theme.HasAtlas(Theme.borderCheckAtlas) then
-		local ok = pcall(NineSliceUtil.ApplyLayoutByName, frame, Theme.borderLayout)
+-- The border atlas's live info: file, size, texcoords and slice margins (L, T, R, B). Margins
+-- come from the atlas's sliceData, else from Theme.border.margins. nil when the client has no
+-- such atlas or its info is unusable (then the fallbacks are used).
+function Theme.SliceInfo()
+	local b = Theme.border
+	if not (b and b.atlas and C_Texture and C_Texture.GetAtlasInfo) then return end
+	local ok, info = pcall(C_Texture.GetAtlasInfo, b.atlas)
+	if not ok or type(info) ~= "table" then return end
+	local file = info.file or info.filename
+	local w, h = info.width, info.height
+	local L, R, T, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+	if not (file and IsNum(w) and IsNum(h) and w > 0 and h > 0
+		and IsNum(L) and IsNum(R) and IsNum(T) and IsNum(B)) then return end
+	local s, m, from = info.sliceData, nil, "theme"
+	if type(s) == "table" and IsNum(s.marginLeft) and IsNum(s.marginTop)
+		and IsNum(s.marginRight) and IsNum(s.marginBottom) then
+		m, from = { s.marginLeft, s.marginTop, s.marginRight, s.marginBottom }, "atlas"
+	else
+		m = b.margins
+	end
+	if type(m) ~= "table" then return end
+	for i = 1, 4 do
+		if not (IsNum(m[i]) and m[i] > 0) then return end
+	end
+	if m[1] + m[3] >= w or m[2] + m[4] >= h then return end
+	return {
+		file = file, w = w, h = h, L = L, R = R, T = T, B = B, m = m, from = from,
+		mode = type(s) == "table" and s.sliceMode or nil,
+	}
+end
+
+-- 4 corners + 4 edges (no centre) cut from the atlas's own texcoords, each piece's size
+-- margin * scale (own units). Corners fixed at the frame's corners, edges between them.
+-- Made textures go into `made` so a failure can hide them again.
+local PIECES = {
+	-- key, column, row
+	{ "TopLeftCorner", 1, 1 }, { "TopEdge", 2, 1 }, { "TopRightCorner", 3, 1 },
+	{ "LeftEdge", 1, 2 }, { "RightEdge", 3, 2 },
+	{ "BottomLeftCorner", 1, 3 }, { "BottomEdge", 2, 3 }, { "BottomRightCorner", 3, 3 },
+}
+Theme.slicePieces = PIECES
+
+local function MakeSliced(frame, si, scale, made)
+	local mL, mT, mR, mB = si.m[1], si.m[2], si.m[3], si.m[4]
+	local du, dv = (si.R - si.L) / si.w, (si.B - si.T) / si.h
+	local us = { si.L, si.L + mL * du, si.R - mR * du, si.R }
+	local vs = { si.T, si.T + mT * dv, si.B - mB * dv, si.B }
+	local layer = Theme.border.drawLayer or "BORDER"
+	local p = {}
+	for _, d in ipairs(PIECES) do
+		local key, c, r = d[1], d[2], d[3]
+		local tex = frame:CreateTexture(nil, layer)
+		made[#made + 1] = tex
+		tex:SetTexture(si.file)
+		tex:SetTexCoord(us[c], us[c + 1], vs[r], vs[r + 1])
+		p[key] = tex
+	end
+	local wL, wR, hT, hB = mL * scale, mR * scale, mT * scale, mB * scale
+	p.TopLeftCorner:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+	p.TopLeftCorner:SetSize(wL, hT)
+	p.TopRightCorner:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
+	p.TopRightCorner:SetSize(wR, hT)
+	p.BottomLeftCorner:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
+	p.BottomLeftCorner:SetSize(wL, hB)
+	p.BottomRightCorner:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
+	p.BottomRightCorner:SetSize(wR, hB)
+	p.TopEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "TOPRIGHT", 0, 0)
+	p.TopEdge:SetPoint("BOTTOMRIGHT", p.TopRightCorner, "BOTTOMLEFT", 0, 0)
+	p.BottomEdge:SetPoint("TOPLEFT", p.BottomLeftCorner, "TOPRIGHT", 0, 0)
+	p.BottomEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "BOTTOMLEFT", 0, 0)
+	p.LeftEdge:SetPoint("TOPLEFT", p.TopLeftCorner, "BOTTOMLEFT", 0, 0)
+	p.LeftEdge:SetPoint("BOTTOMRIGHT", p.BottomLeftCorner, "TOPRIGHT", 0, 0)
+	p.RightEdge:SetPoint("TOPLEFT", p.TopRightCorner, "BOTTOMLEFT", 0, 0)
+	p.RightEdge:SetPoint("BOTTOMRIGHT", p.BottomRightCorner, "TOPRIGHT", 0, 0)
+	return p
+end
+
+-- Gives `frame` a Blizzard border: the sliced action bar frame (map: border.scale, strip:
+-- border.stripScale), else the tooltip NineSlice, else the backdrop file. The frame should be
+-- made with BackdropTemplate so the last fallback works. Returns the kind used, or nil.
+local borderKind = setmetatable({}, { __mode = "k" })   -- [our frame] = "sliced"/"nineslice"/"backdrop"
+local borderScale = setmetatable({}, { __mode = "k" })  -- [our frame] = scale of the sliced pieces
+local borderMargins = setmetatable({}, { __mode = "k" }) -- [our frame] = margins used (L, T, R, B)
+Theme.borderPieces = setmetatable({}, { __mode = "k" }) -- [our frame] = sliced pieces by key
+
+function Theme.ApplyBorder(frame, strip)
+	local b = Theme.border
+	local si = frame.CreateTexture and Theme.SliceInfo()
+	if si then
+		local scale = strip and b.stripScale or b.scale
+		local made = {}
+		local ok, pieces = pcall(MakeSliced, frame, si, scale, made)
+		if ok and pieces then
+			borderKind[frame], borderScale[frame], borderMargins[frame] = "sliced", scale, si.m
+			Theme.borderPieces[frame] = pieces
+			return "sliced"
+		end
+		for _, tex in ipairs(made) do
+			if tex.Hide then tex:Hide() end
+		end
+	end
+	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName and Theme.HasAtlas(b.checkAtlas) then
+		local ok = pcall(NineSliceUtil.ApplyLayoutByName, frame, b.layout)
 		if ok then
 			HideFill(frame)
 			borderKind[frame] = "nineslice"
@@ -152,28 +272,103 @@ function Theme.ApplyBorder(frame)
 	end
 	if frame.SetBackdrop then
 		borderKind[frame] = "backdrop"
-		frame:SetBackdrop({ edgeFile = Theme.fallbackEdgeFile, edgeSize = Theme.fallbackEdgeSize })
+		frame:SetBackdrop({ edgeFile = b.edgeFile, edgeSize = b.edgeSize })
 		if frame.SetBackdropBorderColor then
-			frame:SetBackdropBorderColor(unpack(Theme.fallbackEdgeColor))
+			frame:SetBackdropBorderColor(unpack(b.edgeColor))
 		end
 		return "backdrop"
 	end
 end
 
--- How far `frame`'s visible border sits inside its edge (own units): selectionInset for the
--- tooltip layout, 0 for the fallback or no border.
-function Theme.ArtInset(frame)
-	return borderKind[frame] == "nineslice" and (Theme.selectionInset or 0) or 0
+function Theme.BorderKind(frame)
+	return frame and borderKind[frame] or nil
 end
 
--- Dark see-through background inside `frame`.
+-- How far `frame`'s visible border sits inside its edge per side (own units), returned as
+-- left, right, top, bottom: the shadow for the sliced frame, layoutInset for the tooltip
+-- layout, 0 for the backdrop or no border.
+function Theme.ArtInset(frame)
+	local kind = borderKind[frame]
+	if kind == "sliced" then
+		local s, k = Theme.border.shadow, borderScale[frame] or 1
+		return s[1] * k, s[3] * k, s[2] * k, s[4] * k
+	elseif kind == "nineslice" then
+		local i = Theme.border.layoutInset or 0
+		return i, i, i, i
+	end
+	return 0, 0, 0, 0
+end
+
+-- How far the map's border frame sits outside the map per side (map units), returned as
+-- left, right, top, bottom. Sliced: the frame's inner edge reaches `overlap` px over the map.
+function Theme.BorderOutset(frame)
+	local b = Theme.border
+	local kind = borderKind[frame]
+	if kind == "sliced" then
+		local m, k, o = borderMargins[frame], borderScale[frame] or 1, b.overlap or 0
+		local function side(i) return math.max(0, m[i] * k - o) end
+		return side(1), side(3), side(2), side(4)
+	elseif kind == "nineslice" then
+		local o = b.layoutOutset or 0
+		return o, o, o, o
+	end
+	local o = b.edgeOutset or 0
+	return o, o, o, o
+end
+
+local SIDE = { LEFT = 1, RIGHT = 2, TOP = 3, BOTTOM = 4 }
+
+-- Gap (map px) between the map's border `a` (side aSide) and a strip `b` (side bSide; `k` =
+-- strip units -> map px). Sliced frames: border.gap between the visible edges, so their
+-- see-through shadows may overlap. Other kinds: `base` as before.
+function Theme.StripGap(base, a, aSide, b, bSide, k)
+	if borderKind[a] ~= "sliced" and borderKind[b] ~= "sliced" then return base end
+	local ia = select(SIDE[aSide], Theme.ArtInset(a))
+	local ib = select(SIDE[bSide], Theme.ArtInset(b)) * (k or 1)
+	return (Theme.border.gap or 0) - ia - ib
+end
+
+-- Header strip height and icon bar padding for `frame`'s border kind.
+function Theme.HeaderHeight(frame)
+	return borderKind[frame] == "sliced" and Theme.border.headerHeight or Theme.headerHeight
+end
+
+function Theme.BarPadding(frame)
+	return borderKind[frame] == "sliced" and Theme.border.barPadding or Theme.barPadding
+end
+
+-- Dark see-through background inside `frame` (sliced: inside the shadow, + 1 px).
 function Theme.AddBackground(frame)
 	local tex = frame:CreateTexture(nil, "BACKGROUND")
 	tex:SetTexture(Theme.bgTexture)
 	tex:SetVertexColor(unpack(Theme.bgColor))
-	tex:SetPoint("TOPLEFT", Theme.bgInset, -Theme.bgInset)
-	tex:SetPoint("BOTTOMRIGHT", -Theme.bgInset, Theme.bgInset)
+	local l, r, t, b
+	if borderKind[frame] == "sliced" then
+		l, r, t, b = Theme.ArtInset(frame)
+		l, r, t, b = l + 1, r + 1, t + 1, b + 1
+	else
+		l, r, t, b = Theme.bgInset, Theme.bgInset, Theme.bgInset, Theme.bgInset
+	end
+	tex:SetPoint("TOPLEFT", l, -t)
+	tex:SetPoint("BOTTOMRIGHT", -r, b)
 	return tex
+end
+
+-- One line for /mmap debug: atlas found or not, size, slice margins + mode and where they
+-- came from, and the kind in use on `frame`.
+function Theme.BorderDebug(frame)
+	local L = ns.L or {}
+	local si = Theme.SliceInfo()
+	local art
+	if si then
+		local m = si.m
+		art = ("%s %sx%s, slice %s,%s,%s,%s mode %s (%s)"):format(Theme.border.atlas, tostring(si.w), tostring(si.h),
+			tostring(m[1]), tostring(m[2]), tostring(m[3]), tostring(m[4]), tostring(si.mode or "-"),
+			si.from == "atlas" and (L.DEBUG_FROM_ATLAS or "atlas") or (L.DEBUG_FROM_THEME or "theme"))
+	else
+		art = (L.DEBUG_NO_ATLAS or "NO ATLAS") .. " " .. tostring(Theme.border.atlas)
+	end
+	return art, (frame and borderKind[frame]) or "-"
 end
 
 -- Template name for frames that may need the backdrop fallback.

@@ -326,6 +326,10 @@ local function PrintDebug()
 		whose = (GetMinimapShape == ns.ShapeFn) and L.DEBUG_SHAPE_OURS or L.DEBUG_SHAPE_OTHER
 	end
 	ns.Print(L.DEBUG_SHAPE, shape, whose)
+	if ns.Theme and ns.Theme.BorderDebug then
+		local ok, art, kind = pcall(ns.Theme.BorderDebug, ns.Square and ns.Square.border)
+		if ok then ns.Print(L.DEBUG_BORDER, art, kind) else ns.Print(L.DEBUG_BORDER, L.DEBUG_UNREADABLE, "-") end
+	end
 end
 
 -- Returns the command word and up to two argument words (lower case, "" when missing).

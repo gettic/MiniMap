@@ -16,11 +16,11 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 
 | Part | What you get |
 |---|---|
-| Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border. It stays square with "Rotate Minimap" on. |
+| Square map | The round minimap becomes square, with a frame around it made from Blizzard's main action bar frame art (read from the game). If the game doesn't have that art, it uses a thin Blizzard tooltip-style border instead. It stays square with "Rotate Minimap" on. |
 | No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
 | Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
-| Header | The zone name, clock, calendar and tracking buttons sit in their own bordered strip just above the map. |
-| Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment (the addon counter) in the bottom-right corner, just above the zoom buttons. |
+| Header | The zone name, clock, calendar and tracking buttons sit in their own framed strip just above the map. |
+| Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment (the addon counter) in the top-right corner. |
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. A small see-through dark box behind them makes them easier to read. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it, and Edit Mode's box fits the map, header and bar. |
@@ -47,7 +47,7 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 |---|---|
 | Drag to move | The map, its border and the button bar move together. |
 | Size | The map, border, bar and buttons scale together. |
-| Header Underneath | The header strip goes under the map and the button bar above it. The mail icon moves to the bottom-left corner and the day/night disc to the top-left corner. The addon compartment stays bottom-right. |
+| Header Underneath | The header strip goes under the map and the button bar above it. The mail icon moves to the bottom-left corner and the day/night disc to the top-left corner. The addon compartment stays top-right. |
 | Selection box | The box covers the map, its header strip and the button bar, so you can move the map flush into a screen corner. It snaps by those visible edges. |
 | Rotate Minimap | The map turns inside the square. |
 | Icon Size | The map markers resize as normal. |
@@ -62,7 +62,7 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
 | `/mmap bookson` / `/mmap booksoff` | Turns the Library Books pin fix on or off (see [Library Books](#library-books)). |
 | `/mmap zygoron` / `/mmap zygoroff` | Turns the Zygor solid-line fix on or off (see [Zygor](#zygor)). |
-| `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines and the map's shape. Include it in a bug report about tooltips or the map's shape. |
+| `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines, the map's shape and a "Border art" line that says which border is in use. Include it in a bug report about tooltips or the map's shape. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 
@@ -73,7 +73,7 @@ Mini Map already looks for new buttons a few times after login and when another 
 
 ### Library Books
 
-Works with Library Books by Taraezor. Its far-away minimap pins sit on the square map's edge instead of a curve, and books in the map's corners show at their real spot. Mini Map doesn't change Library Books itself, it only moves its pins on the minimap.
+Works with Library Books by Taraezor. Its far-away minimap pins sit on the square map's edge instead of a curve, and books in the map's corners show at their real spot. Its pins also sit in the map's layer, under the coordinates and under other addons' windows. Mini Map doesn't change Library Books itself, it only moves its pins on the minimap.
 
 Keep Library Books' **Minimap Border Clamp** option on (its default; `/books o` > Minimap (Advanced)). With it off, Library Books hides the corner pins.
 

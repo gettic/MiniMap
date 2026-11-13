@@ -275,32 +275,103 @@ function Square:MakeZonePlate(zone, height)
 	return f
 end
 
+-- Screen x of a frame's left and right edge (pcall), or nil when it has no rect.
+local function ScreenLR(f)
+	if not (f and f.GetLeft and f.GetEffectiveScale) then return end
+	local ok, l, r, es = pcall(function() return f:GetLeft(), f:GetRight(), f:GetEffectiveScale() end)
+	if ok and type(l) == "number" and type(r) == "number" and type(es) == "number" and es > 0 then
+		return l * es, r * es
+	end
+end
+
+-- Screen x span of the tracking button (its 17 px frame and the 23 px button in it).
+local function TrackingLR()
+	local tr = MinimapCluster and MinimapCluster.Tracking
+	local l, r
+	for _, f in ipairs({ tr or false, tr and tr.Button or false }) do
+		local a, b = ScreenLR(f or nil)
+		if a then
+			l = (l and math.min(l, a)) or a
+			r = (r and math.max(r, b)) or b
+		end
+	end
+	return l, r
+end
+
+-- How far tracking (left) and the calendar (right) reach past the zone button, in zone units,
+-- measured from their rects (Blizzard anchors them to the zone button, so this doesn't depend
+-- on where the zone sits); `reserveL` / `reserveR` when a rect can't be read.
+local function SideExtents(zone)
+	local P = T.zonePlate
+	local left, right = P.reserveL, P.reserveR
+	local zl, zr = ScreenLR(zone)
+	local zs = zone:GetEffectiveScale()
+	if zl and zs and zs > 0 then
+		local tl = TrackingLR()
+		if tl then left = math.max(0, (zl - tl) / zs) end
+		local _, cr = ScreenLR(GameTimeFrame)
+		if cr then right = math.max(0, (cr - zr) / zs) end
+	end
+	return left, right
+end
+
 -- Zone button as wide as the strip allows (between tracking and calendar), never narrower
 -- than Blizzard's; zone text grows by the same amount. Blizzard's own plate texture is made
--- invisible (ours is drawn instead), its hover glow covers the whole button. Only
--- SetWidth / ClearAllPoints / SetAllPoints / SetAlpha, out of combat (square-pieces job).
-function Square:WidenZone(zone, h, base)
+-- invisible (ours is drawn instead), its hover glow covers the whole button. Then the whole
+-- group (tracking, zone, calendar) is centred in the strip by the zone's LEFT edge, so the
+-- space left and right is the same. Without our plate the width stays Blizzard's (only
+-- centred). Only SetWidth / ClearAllPoints / SetPoint / SetAllPoints / SetAlpha, out of combat
+-- (square-pieces job). The strip's units are the zone's units (same effective scale).
+function Square:PlaceZone(zone, h, base, under, textY)
 	local P = T.zonePlate
 	local plate = self:MakeZonePlate(zone, base.h)
-	if not plate then return end
-	local w = math.max(base.w, math.floor(h:GetWidth() - 2 * P.sidePad - P.reserveL - P.reserveR))
-	-- Over the strip's background, under the zone button's text and the clock.
-	local hl, zl = h:GetFrameLevel(), zone:GetFrameLevel()
-	plate:SetFrameLevel(math.max(hl, math.min(hl + 1, zl - 1)))
-	if zone.StateTexture and zone.StateTexture.SetAlpha then zone.StateTexture:SetAlpha(0) end
-	local add = zone.AddTexture
-	if add and add.ClearAllPoints then
-		add:ClearAllPoints()
-		add:SetAllPoints(zone)
+	local left, right = SideExtents(zone)
+	local stripW = h:GetWidth()
+	local w = base.w
+	if plate then
+		w = math.max(base.w, math.floor(stripW - 2 * P.sidePad - left - right))
+		-- Over the strip's background, under the zone button's text and the clock.
+		local hl, zl = h:GetFrameLevel(), zone:GetFrameLevel()
+		plate:SetFrameLevel(math.max(hl, math.min(hl + 1, zl - 1)))
+		if zone.StateTexture and zone.StateTexture.SetAlpha then zone.StateTexture:SetAlpha(0) end
+		local add = zone.AddTexture
+		if add and add.ClearAllPoints then
+			add:ClearAllPoints()
+			add:SetAllPoints(zone)
+		end
+		zone:SetWidth(w)
+		local text = MinimapZoneText
+		if text and text.SetWidth and base.textW then text:SetWidth(base.textW + (w - base.w)) end
 	end
-	zone:SetWidth(w)
-	local text = MinimapZoneText
-	if text and text.SetWidth and base.textW then text:SetWidth(base.textW + (w - base.w)) end
-	self.zoneWidth = w
+	local x = (stripW - (left + w + right)) / 2 + left
+	zone:ClearAllPoints()
+	if under then
+		zone:SetPoint("TOPLEFT", h, "TOPLEFT", x, -textY)
+	else
+		zone:SetPoint("BOTTOMLEFT", h, "BOTTOMLEFT", x, textY)
+	end
+	self.zoneWidth, self.zoneX, self.zoneExtents = w, x, { left, right }
+end
+
+-- `/mmap debug`: screen x of the strip, tracking, zone button and calendar (L-R), and the
+-- empty space left and right of the group inside the strip.
+function Square.HeaderDebug()
+	local function Span(l, r) return l and string.format("%.1f-%.1f", l, r) or "-" end
+	local hl, hr = ScreenLR(Square.header)
+	local tl, tr = TrackingLR()
+	local zl, zr = ScreenLR(MinimapCluster and MinimapCluster.ZoneTextButton)
+	local cl, cr = ScreenLR(GameTimeFrame)
+	local gl, gr = "-", "-"
+	if hl and zl then
+		gl = string.format("%.1f", math.min(tl or zl, zl) - hl)
+		gr = string.format("%.1f", hr - math.max(cr or zr, zr))
+	end
+	return Span(hl, hr), Span(tl, tr), Span(zl, zr), Span(cl, cr), gl, gr
 end
 
 -- The strip goes on the side away from the icon bar, 2 px from the border; Blizzard's zone
--- button (with tracking and clock anchored to it) is centred in it, then widened (WidenZone).
+-- button (with tracking and clock anchored to it) is put in it (first centred, so tracking
+-- and calendar can be measured), then widened and the whole group centred (PlaceZone).
 function Square:PlaceHeader(under)
 	local zone = MinimapCluster and MinimapCluster.ZoneTextButton
 	local h, b = self.header, self.border
@@ -329,7 +400,7 @@ function Square:PlaceHeader(under)
 		zone:SetPoint("BOTTOM", h, "BOTTOM", T.headerOffsetX, textY)
 	end
 	h:Show()
-	self:WidenZone(zone, h, base)
+	self:PlaceZone(zone, h, base, under, textY)
 end
 
 -- Mail (IndicatorFrame) top-left inside the map (bottom-left with Header Underneath: the

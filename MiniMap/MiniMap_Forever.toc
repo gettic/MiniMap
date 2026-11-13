@@ -2,7 +2,7 @@
 ## Title: Mini Map
 ## Notes: A square minimap with a bar under it that holds the minimap buttons.
 ## Author: gettic
-## Version: 0.2.1-beta.9
+## Version: 0.2.1-beta.10
 ## AllowLoadGameType: forever
 ## SavedVariables: MiniMapForeverDB
 ## IconTexture: Interface\Icons\INV_Misc_Map_01

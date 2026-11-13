@@ -459,6 +459,10 @@ local function PrintDebug()
 		local ok, art, kind = pcall(ns.Theme.BorderDebug, ns.Square and ns.Square.border)
 		if ok then ns.Print(L.DEBUG_BORDER, art, kind) else ns.Print(L.DEBUG_BORDER, L.DEBUG_UNREADABLE, "-") end
 	end
+	if ns.Square and ns.Square.HeaderDebug then
+		local ok, s, t, z, c, gl, gr = pcall(ns.Square.HeaderDebug)
+		if ok then ns.Print(L.DEBUG_HEADER, s, t, z, c, gl, gr) end
+	end
 	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end
 

@@ -548,15 +548,12 @@ function Square:ApplyLayer()
 				f:SetFrameStrata(T.layer)
 			end
 		end
-		-- Blizzard's zoom hover box (Minimap.ZoomHitArea) is only checked with IsMouseOver,
-		-- so it never needs clicks: turn them off so it can't block clicks or pings on the map.
+		-- Blizzard's zoom hover box (Minimap.ZoomHitArea) is only checked with IsMouseOver (by
+		-- position), so it never needs the mouse: turn it off completely, so it can't block
+		-- clicks, pings or the minimap's own blip tooltips under it.
 		local hit = Minimap and Minimap.ZoomHitArea
-		if Usable(hit) then
-			if hit.SetMouseClickEnabled then
-				hit:SetMouseClickEnabled(false)
-			elseif hit.EnableMouse then
-				hit:EnableMouse(false)
-			end
+		if Usable(hit) and hit.EnableMouse and (not hit.IsMouseEnabled or hit:IsMouseEnabled()) then
+			hit:EnableMouse(false)
 		end
 		self.layering = false
 	end)

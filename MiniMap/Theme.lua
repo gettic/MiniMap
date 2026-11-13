@@ -7,7 +7,7 @@ local Theme = {
 	mask = "Interface\\BUTTONS\\WHITE8X8",
 
 	-- Border of the map, header strip and icon bar. A theme swaps this whole table.
-	-- 1st choice ("sliced"): the first usable atlas of `candidates` (main action bar frame,
+	-- Only with useSliced (off by default): 1st choice ("sliced"): the first usable atlas of `candidates` (main action bar frame,
 	--   then the action button frame), cut into 4 corners + 4 edges from its own atlas info
 	--   (file, texcoords, slice margins read live from C_Texture.GetAtlasInfo); no centre
 	--   piece, so nothing covers the map.
@@ -15,6 +15,9 @@ local Theme = {
 	-- 3rd ("backdrop"): the tooltip border file via BackdropTemplate.
 	-- Sides in the tables below are in the order Left, Top, Right, Bottom.
 	border = {
+		-- Off: the thin tooltip border (the user's choice). On: the cut atlases below first
+		-- (kept for a later theme; `/mmap art` still lists them).
+		useSliced = false,
 		-- Cut atlases, tried in this order. margins (atlas px) only when the atlas has no
 		-- sliceData; share = part of the atlas per side used as corner/edge when it has none
 		-- (button frames). shadow = see-through shadow per side, atlas px.
@@ -312,7 +315,7 @@ Theme.borderPieces = setmetatable({}, { __mode = "k" }) -- [our frame] = sliced 
 
 function Theme.ApplyBorder(frame, strip)
 	local b = Theme.border
-	if frame.CreateTexture then
+	if b.useSliced and frame.CreateTexture then
 		local scale = strip and b.stripScale or b.scale
 		for _, cand in ipairs(b.candidates or {}) do
 			local si = Theme.SliceInfo(cand)
@@ -446,6 +449,10 @@ end
 function Theme.BorderUse(frame)
 	local kind = (frame and borderKind[frame]) or "-"
 	if kind == "sliced" and borderAtlas[frame] then kind = kind .. " " .. borderAtlas[frame] end
+	if not Theme.border.useSliced then
+		local r = ns.L and ns.L.ART_SLICED_OFF
+		return kind, r
+	end
 	local _, _, skipped = Theme.PickSliced()
 	if #skipped == 0 then return kind end
 	local parts = {}

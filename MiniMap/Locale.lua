@@ -44,6 +44,9 @@ L.DEBUG_SHAPE_OURS = "Mini Map's"
 L.DEBUG_SHAPE_OTHER = "another addon's or the game's"
 L.DEBUG_SHAPE_NONE = "not set"
 L.DEBUG_BORDER = "Border art: %s; in use: %s"
+L.DEBUG_MOUSE = "Under the mouse %d: %s (parent %s), strata %s, level %s, mouse %s"
+L.DEBUG_MOUSE_NONE = "Under the mouse: nothing (the game world)"
+L.DEBUG_MAP = "Minimap: strata %s, level %s, mouse %s, mouse over it %s, hover tooltip running %s"
 L.DEBUG_NO_ATLAS = "NO ATLAS"
 -- Where the border's slice margins came from.
 L.FROM = {
@@ -69,6 +72,7 @@ L.ART_MISSING = "%s: missing"
 L.ART_NO_SLICE = "none"
 L.ART_IN_USE = "Border in use: %s"
 L.ART_SKIPPED = "Not used: %s"
+L.ART_SLICED_OFF = "action bar art switched off, thin border chosen"
 
 L.HELP_6 = "/mmap bookson or /mmap booksoff - Library Books' far-away minimap pins on the square's edge (on) or on its own circle (off)."
 L.BOOKS_ON = "Library Books pins now follow the square minimap."

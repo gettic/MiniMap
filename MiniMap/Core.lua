@@ -286,6 +286,51 @@ local function Readable(v)
 	return ok and s or L.DEBUG_UNREADABLE
 end
 
+-- One value from a frame method, readable or "?" (pcall; secret values shown as such).
+local function Ask(f, method)
+	if not (f and f[method]) then return "?" end
+	local ok, v = pcall(f[method], f)
+	if not ok then return "?" end
+	return Readable(v)
+end
+
+local function NameOf(f)
+	if not f then return "nil" end
+	local ok, name = pcall(f.GetName, f)
+	if ok and name then return Readable(name) end
+	return L.NAMES_UNNAMED .. " " .. Ask(f, "GetObjectType")
+end
+
+-- The frames under the mouse (what takes the mouse there) and the Minimap's own state: if the
+-- Minimap isn't first, that frame stops Blizzard's minimap tooltips at this spot.
+local function PrintMouse()
+	local foci
+	if GetMouseFoci then
+		local ok, t = pcall(GetMouseFoci)
+		foci = ok and type(t) == "table" and t or {}
+	else
+		foci = { GetMouseFocus and GetMouseFocus() }
+	end
+	local n = 0
+	for i = 1, math.min(#foci, 5) do
+		local f = foci[i]
+		if f and f ~= WorldFrame then
+			n = n + 1
+			local forbidden = f.IsForbidden and f:IsForbidden()
+			local parent = (not forbidden and f.GetParent) and f:GetParent() or nil
+			ns.Print(L.DEBUG_MOUSE, i, forbidden and "(forbidden)" or NameOf(f), NameOf(parent),
+				Ask(f, "GetFrameStrata"), Ask(f, "GetFrameLevel"), Ask(f, "IsMouseEnabled"))
+		end
+	end
+	if n == 0 then ns.Print(L.DEBUG_MOUSE_NONE) end
+	local m = Minimap
+	if m then
+		local okS, script = pcall(m.GetScript, m, "OnUpdate")
+		ns.Print(L.DEBUG_MAP, Ask(m, "GetFrameStrata"), Ask(m, "GetFrameLevel"), Ask(m, "IsMouseEnabled"),
+			Ask(m, "IsMouseOver"), okS and tostring(script ~= nil) or "?")
+	end
+end
+
 local function PrintDebug()
 	local tip = GameTooltip
 	local owner, shown, count = "-", "-", "-"
@@ -330,6 +375,7 @@ local function PrintDebug()
 		local ok, art, kind = pcall(ns.Theme.BorderDebug, ns.Square and ns.Square.border)
 		if ok then ns.Print(L.DEBUG_BORDER, art, kind) else ns.Print(L.DEBUG_BORDER, L.DEBUG_UNREADABLE, "-") end
 	end
+	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end
 
 -- /mmap art: which border atlases this client has (read only, pcall).

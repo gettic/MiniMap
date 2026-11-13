@@ -16,7 +16,7 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 
 | Part | What you get |
 |---|---|
-| Square map | The round minimap becomes square, with a frame around it made from Blizzard's main action bar frame art (read from the game). If the game doesn't have that art, it uses the action button frame art (the look of the extra action bars), and if that is missing too, a thin Blizzard tooltip-style border. It stays square with "Rotate Minimap" on. |
+| Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border around it. It stays square with "Rotate Minimap" on. |
 | No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
 | Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
 | Header | The zone name, clock, calendar and tracking buttons sit in their own framed strip just above the map. |
@@ -62,8 +62,8 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
 | `/mmap bookson` / `/mmap booksoff` | Turns the Library Books pin fix on or off (see [Library Books](#library-books)). |
 | `/mmap zygoron` / `/mmap zygoroff` | Turns the Zygor solid-line fix on or off (see [Zygor](#zygor)). |
-| `/mmap art` | Lists which border art this game has and why one wasn't used. Include it in a bug report about the border. |
-| `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines, the map's shape and a "Border art" line that says which border is in use. Include it in a bug report about tooltips or the map's shape. |
+| `/mmap art` | Lists which border art this game has and says the action bar art is switched off. Include it in a bug report about the border. |
+| `/mmap debug` | Hold the mouse over the spot where a minimap tooltip is missing and type it. Prints the tooltip's lines, the map's shape, the frames under the mouse, whether the minimap's tooltip is running, and a "Border art" line. Include it in a bug report about tooltips or the map's shape. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 

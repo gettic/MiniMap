@@ -17,6 +17,7 @@ Version 0.1.0. Please report anything that looks wrong on the [Issues](https://g
 | Part | What you get |
 |---|---|
 | Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border. It stays square with "Rotate Minimap" on. |
+| No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
 | Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
 | Header | The zone name, clock, calendar and tracking buttons sit in their own bordered strip just above the map. |
 | Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment in the top-right corner. |
@@ -70,6 +71,7 @@ Mini Map already looks for new buttons a few times after login and when another 
 ## Known limits
 
 - **Corner clicks don't ping.** The game only pings inside a circle, so clicking in the square map's corners doesn't send a ping.
+- **Some markers may still stop at a circle.** The game draws some markers itself, such as party dots and town or flight-master arrows. Mini Map can't change that, so they may still stop at a circle instead of the square's edge.
 - **One shift after updating.** The map stays in its screen corner after `/reload` and login, and turning Header Underneath on or off no longer moves it. On the first load after you update, it may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
 - **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report what it prints on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 

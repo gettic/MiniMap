@@ -11,6 +11,27 @@ local function Container()
 	return MinimapCluster and MinimapCluster.MinimapContainer
 end
 
+-- The client draws a round ring along the map edge around big quest / dig-site / task areas.
+-- Hide those rings (the area fill stays), then let the client place its blips again.
+-- Every call is checked first (the client may lack some) and wrapped in pcall; never in combat.
+local RING_SETTERS = {
+	"SetArchBlobRingScalar", "SetArchBlobRingAlpha",
+	"SetQuestBlobRingScalar", "SetQuestBlobRingAlpha",
+	"SetTaskBlobRingScalar", "SetTaskBlobRingAlpha",
+}
+
+local function HideBlobRings()
+	if not Minimap or InCombatLockdown() then return end
+	for _, method in ipairs(RING_SETTERS) do
+		if type(Minimap[method]) == "function" then
+			pcall(Minimap[method], Minimap, 0)
+		end
+	end
+	if type(Minimap.UpdateBlips) == "function" then
+		pcall(Minimap.UpdateBlips, Minimap)
+	end
+end
+
 -- Square mask on the minimap and, when it is loaded, on the hybrid minimap.
 function Square:ApplyMask()
 	if Minimap and Minimap.SetMaskTexture then
@@ -20,6 +41,7 @@ function Square:ApplyMask()
 	if hybrid and hybrid.CircleMask and hybrid.CircleMask.SetTexture then
 		hybrid.CircleMask:SetTexture(T.mask, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
 	end
+	HideBlobRings()
 end
 
 local function Silence(tex)

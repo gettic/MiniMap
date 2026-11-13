@@ -34,4 +34,10 @@ L.SHAPE_CONFLICT = "%s also changes the minimap, so Mini Map leaves the minimap'
 L.BAR_CONFLICT = "%s also collects minimap buttons, so Mini Map's button bar is off."
 L.OTHER_ADDON = "another addon"
 
+L.HELP_5 = "/mmap ore - on/off: ore icon and short name, in your Mining skill's colour, on mining nodes' minimap tooltips."
+L.ORE_ON = "Ore labels on: hold the mouse over a mining node on the minimap."
+L.ORE_OFF = "Ore labels off."
+L.ORE_MISSING = "Ore labels can't work on this game version (no minimap tooltip hook)."
+L.ORE_MINING = "Mining" -- skill name, only used on clients with the old skills list
+
 L.PART_FAILED = "Part \"%s\" could not start (error shown by the game's error window)."

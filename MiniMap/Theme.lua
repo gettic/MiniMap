@@ -78,6 +78,22 @@ local Theme = {
 	-- Popups a bar button opens (a child frame bigger than its slot or reaching outside it) sit
 	-- this many levels above the bar, over every slot (+2) and slot overlay (+3). Same strata.
 	popupLevel = 20,
+
+	-- Ore labels in the minimap tooltip (OreLabels.lua). Colours come from Blizzard's
+	-- `QuestDifficultyColors` (same as the trade skill window) by these keys; the numbers are
+	-- the fallback when that table is missing. `iconSize` 0 = the tooltip text's height.
+	ore = {
+		iconSize = 0,
+		fallbackIcon = "Interface\\Icons\\INV_Misc_QuestionMark",
+		neutral = { 1, 1, 1 }, -- Mining skill unknown
+		colors = {
+			impossible = { 1, 0.1, 0.1 },        -- skill too low (red)
+			verydifficult = { 1, 0.5, 0.25 },    -- orange
+			difficult = { 1, 1, 0 },             -- yellow
+			standard = { 0.25, 0.75, 0.25 },     -- green
+			trivial = { 0.5, 0.5, 0.5 },         -- grey
+		},
+	},
 }
 ns.Theme = Theme
 

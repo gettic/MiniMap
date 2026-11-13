@@ -4,6 +4,7 @@ local L = ns.L
 
 local DEFAULTS = {
 	dbVersion = 1,
+	oreLabels = false, -- ore icon + short name on mining nodes' minimap tooltips (/mmap ore)
 }
 
 -- Addons that change the minimap's shape or move it (folder names; best guesses, keep up to date).
@@ -122,6 +123,8 @@ local function Setup()
 	else
 		ns.SafeRun("IconBar", ns.IconBar.Setup, ns.IconBar)
 	end
+
+	ns.SafeRun("OreLabels", ns.OreLabels.Setup, ns.OreLabels)
 end
 
 local events = CreateFrame("Frame")
@@ -246,6 +249,8 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		PrintNames()
 	elseif msg == "pos" then
 		PrintPos()
+	elseif msg == "ore" and ns.db then
+		ns.OreLabels:Toggle()
 	elseif msg == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -258,5 +263,6 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_2)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
+		ns.Print(L.HELP_5)
 	end
 end

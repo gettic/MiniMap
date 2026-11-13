@@ -46,7 +46,9 @@ L.DEBUG_SHAPE_NONE = "not set"
 L.DEBUG_BORDER = "Border art: %s; in use: %s"
 L.DEBUG_MOUSE = "Under the mouse %d: %s (parent %s), strata %s, level %s, mouse %s"
 L.DEBUG_MOUSE_NONE = "Under the mouse: nothing (the game world)"
-L.DEBUG_MAP = "Minimap: strata %s, level %s, mouse %s, mouse over it %s, hover tooltip running %s"
+L.DEBUG_MAP = "Minimap: strata %s, level %s, mouse %s (clicks %s, hover %s), mouse over it %s, hover tooltip running %s"
+L.DEBUG_FIXES = "Mouse fixes by Mini Map: %s"
+L.DEBUG_FIXES_NONE = "none needed"
 L.DEBUG_NO_ATLAS = "NO ATLAS"
 -- Where the border's slice margins came from.
 L.FROM = {

@@ -327,8 +327,13 @@ local function PrintMouse()
 	if m then
 		local okS, script = pcall(m.GetScript, m, "OnUpdate")
 		ns.Print(L.DEBUG_MAP, Ask(m, "GetFrameStrata"), Ask(m, "GetFrameLevel"), Ask(m, "IsMouseEnabled"),
+			Ask(m, "IsMouseClickEnabled"), Ask(m, "IsMouseMotionEnabled"),
 			Ask(m, "IsMouseOver"), okS and tostring(script ~= nil) or "?")
 	end
+	local names = {}
+	for k in pairs(ns.Square and ns.Square.mouseFixes or {}) do names[#names + 1] = k end
+	table.sort(names)
+	ns.Print(L.DEBUG_FIXES, #names > 0 and table.concat(names, "; ") or L.DEBUG_FIXES_NONE)
 end
 
 local function PrintDebug()

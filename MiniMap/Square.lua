@@ -556,7 +556,122 @@ function Square:ApplyLayer()
 			hit:EnableMouse(false)
 		end
 		self.layering = false
+		ns.SafeRun("MouseGuard", Square.GuardMouse, Square)
 	end)
+end
+
+---------------------------------------------------------------------------
+-- Mouse guard: Blizzard's minimap pings (click) and blip tooltips (hover) only work while the
+-- Minimap itself is the first frame taking the mouse under the cursor. Out of combat:
+-- 1. the Minimap's own mouse (and click / motion) is on;
+-- 2. no frame it sits in (MinimapContainer, MinimapCluster) is at its level or above;
+-- 3. any other shown, mouse-taking frame near the map (children of the cluster, container,
+--    MinimapBackdrop and the Minimap, plus those three) that covers half the map or more gets
+--    its mouse turned off. Small pieces (buttons, pins, the counter) are never touched, nor
+--    the icon bar's buttons and their menus, nor anything while Edit Mode is open.
+-- Plain widget calls only; what was changed is kept in Square.mouseFixes for /mmap debug.
+---------------------------------------------------------------------------
+local function MouseOn(f)
+	if f.IsMouseEnabled and f:IsMouseEnabled() then return true end
+	if f.IsMouseClickEnabled and f:IsMouseClickEnabled() then return true end
+	if f.IsMouseMotionEnabled and f:IsMouseMotionEnabled() then return true end
+	return false
+end
+
+local function Rect(f)
+	local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+	if not (l and r and t and b) then return end
+	local s = f:GetEffectiveScale() or 1
+	return l * s, r * s, t * s, b * s
+end
+
+-- Share of the map's area that f covers (0..1).
+local function CoverShare(f, ml, mr, mt, mb)
+	local l, r, t, b = Rect(f)
+	if not l then return 0 end
+	local w = math.min(r, mr) - math.max(l, ml)
+	local h = math.min(t, mt) - math.max(b, mb)
+	if w <= 0 or h <= 0 then return 0 end
+	return (w * h) / ((mr - ml) * (mt - mb))
+end
+
+local function IsUnder(f, root) -- f is root or one of its descendants
+	local depth = 0
+	while f and depth < 20 do
+		if f == root then return true end
+		f = f.GetParent and f:GetParent() or nil
+		depth = depth + 1
+	end
+	return false
+end
+
+local STRATA_ORDER = { WORLD = 0, BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
+	FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
+
+local function EditModeOpen()
+	local em = EditModeManagerFrame
+	return em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive()
+end
+
+local function AddKids(list, parent)
+	if not (parent and parent.GetChildren) then return end
+	for _, c in ipairs({ parent:GetChildren() }) do list[#list + 1] = c end
+end
+
+function Square:GuardMouse()
+	local m = Minimap
+	if not self.active or InCombatLockdown() or not Usable(m) or EditModeOpen() then return end
+	self.mouseFixes = self.mouseFixes or {}
+	local fixes = self.mouseFixes
+	-- 1. The Minimap's own mouse.
+	if m.EnableMouse and m.IsMouseEnabled and not m:IsMouseEnabled() then
+		m:EnableMouse(true)
+		fixes["Minimap mouse on"] = true
+	end
+	if m.SetMouseClickEnabled and m.IsMouseClickEnabled and not m:IsMouseClickEnabled() then
+		m:SetMouseClickEnabled(true)
+		fixes["Minimap clicks on"] = true
+	end
+	if m.SetMouseMotionEnabled and m.IsMouseMotionEnabled and not m:IsMouseMotionEnabled() then
+		m:SetMouseMotionEnabled(true)
+		fixes["Minimap hover on"] = true
+	end
+	local ml, mr, mt, mb = Rect(m)
+	if not (ml and mr > ml and mt > mb) then return end
+	local mStrata = STRATA_ORDER[m:GetFrameStrata()] or 1
+	-- 2. Frames the Minimap sits in: keep it above them.
+	local p, depth = m:GetParent(), 0
+	while p and p ~= UIParent and depth < 5 do
+		if Usable(p) and p.GetFrameLevel and MouseOn(p)
+			and (STRATA_ORDER[p:GetFrameStrata()] or 1) == mStrata
+			and p:GetFrameLevel() >= m:GetFrameLevel() then
+			m:SetFrameLevel(p:GetFrameLevel() + 1)
+			fixes["Minimap raised over " .. (p:GetName() or "its holder")] = true
+		end
+		p, depth = p:GetParent(), depth + 1
+	end
+	-- 3. Big mouse-taking frames over the map.
+	local c = MinimapCluster
+	local list = { c, Container(), MinimapBackdrop }
+	AddKids(list, c)
+	AddKids(list, Container())
+	AddKids(list, MinimapBackdrop)
+	AddKids(list, m)
+	local bar = ns.IconBar and ns.IconBar.frame
+	local sel = c and c.Selection
+	for i = 1, #list do
+		local f = list[i]
+		if f and f ~= m and f ~= sel and f ~= HybridMinimap and not IsUnder(m, f) and Usable(f) and f.EnableMouse
+			and f.IsVisible and f:IsVisible() and MouseOn(f)
+			and not (bar and IsUnder(f, bar))
+			and CoverShare(f, ml, mr, mt, mb) >= 0.5 then
+			local fs = STRATA_ORDER[f:GetFrameStrata()] or 1
+			if fs > mStrata or (fs == mStrata and f:GetFrameLevel() >= m:GetFrameLevel()) then
+				f:EnableMouse(false)
+				fixes["mouse off: " .. (f:GetName() or ((f.GetObjectType and f:GetObjectType() or "frame") .. " in " .. ((f:GetParent() and f:GetParent():GetName()) or "?")))] = true
+			end
+		end
+	end
 end
 
 -- Put the layer back if Blizzard or another addon changes it (once, not while we set it).
@@ -616,5 +731,11 @@ function Square:Setup()
 	ns.RunOutOfCombat("edit-fit", function()
 		ns.SafeRun("EditModeBox", Square.FitSelection, Square)
 	end)
+	-- Mouse guard again once other addons have made their frames.
+	for _, delay in ipairs({ 3, 15 }) do
+		C_Timer.After(delay, function()
+			ns.RunOutOfCombat("mouse-guard", function() ns.SafeRun("MouseGuard", Square.GuardMouse, Square) end)
+		end)
+	end
 	-- GetMinimapShape ("SQUARE") is set by Core.lua when it loads.
 end

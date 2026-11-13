@@ -24,7 +24,7 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. A small see-through dark box behind them makes them easier to read. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it, and Edit Mode's box fits the map, header and bar. |
-| Mouse guard | Mini Map makes sure the minimap itself takes the mouse, puts back its click area if something shrank it, and turns off the mouse on any big invisible frame lying over it (from Mini Map, the game or another addon), so clicks (pings) and tooltips reach the map. It doesn't run in combat or in Edit Mode. |
+| Mouse guard | Mini Map makes sure the minimap itself takes the mouse, puts back its click area if something shrank it, and turns off the mouse on the game's invisible holder frames around the map (such as the minimap cluster) and on any other big invisible frame lying over it, so clicks (pings) and tooltips reach the map. It doesn't run in combat. While Edit Mode is open the holders get their mouse back, so you can still select and move the minimap; it turns them off again when Edit Mode closes. |
 | Layer | The map, its border, the header strip, the bar and the buttons sit in the background layer, so other addons' windows always draw over them. |
 
 The bar hides itself when it has no buttons. Blizzard's event button also goes into the bar while an event is on.

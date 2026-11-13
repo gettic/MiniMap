@@ -608,6 +608,25 @@ end
 local STRATA_ORDER = { WORLD = 0, BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5,
 	FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 
+-- f is above the Minimap for the mouse: strata order first, then frame level.
+local function Above(f, m)
+	local fs = STRATA_ORDER[f:GetFrameStrata()] or 1
+	local ms = STRATA_ORDER[m:GetFrameStrata()] or 1
+	if fs ~= ms then return fs > ms end
+	return f:GetFrameLevel() >= m:GetFrameLevel()
+end
+Square.Above = Above
+
+-- Holders whose mouse we turned off (weak): given back while Edit Mode is open.
+local holdersOff = setmetatable({}, { __mode = "k" })
+
+function Square:RestoreHolders()
+	if InCombatLockdown() then return end
+	for p in pairs(holdersOff) do
+		if p.EnableMouse and not (p.IsForbidden and p:IsForbidden()) then p:EnableMouse(true) end
+	end
+end
+
 local function EditModeOpen()
 	local em = EditModeManagerFrame
 	return em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive()
@@ -646,15 +665,19 @@ function Square:GuardMouse()
 	end
 	local ml, mr, mt, mb = Rect(m)
 	if not (ml and mr > ml and mt > mb) then return end
-	local mStrata = STRATA_ORDER[m:GetFrameStrata()] or 1
-	-- 2. Frames the Minimap sits in: keep it above them.
+	-- 2. Frames the Minimap sits in (MinimapContainer, MinimapCluster): one that takes the mouse
+	-- and is above the map (higher strata, or same strata at its level or higher) catches every
+	-- click and hover on it. The layer keeps the map low on purpose, so the holder's mouse goes
+	-- off instead (out of combat; allowed on protected frames too, so only forbidden ones are
+	-- skipped). Edit Mode drags with its own Selection child; the mouse is given back while
+	-- Edit Mode is open (RestoreHolders) and taken again when it closes.
 	local p, depth = m:GetParent(), 0
 	while p and p ~= UIParent and depth < 5 do
-		if Usable(p) and p.GetFrameLevel and MouseOn(p)
-			and (STRATA_ORDER[p:GetFrameStrata()] or 1) == mStrata
-			and p:GetFrameLevel() >= m:GetFrameLevel() then
-			m:SetFrameLevel(p:GetFrameLevel() + 1)
-			fixes["Minimap raised over " .. (p:GetName() or "its holder")] = true
+		if not (p.IsForbidden and p:IsForbidden()) and p.EnableMouse and p.GetFrameLevel
+			and MouseOn(p) and Above(p, m) then
+			p:EnableMouse(false)
+			holdersOff[p] = true
+			fixes["mouse off: " .. (p:GetName() or "map holder")] = true
 		end
 		p, depth = p:GetParent(), depth + 1
 	end
@@ -673,8 +696,7 @@ function Square:GuardMouse()
 			and f.IsVisible and f:IsVisible() and MouseOn(f)
 			and not (bar and IsUnder(f, bar))
 			and CoverShare(f, ml, mr, mt, mb) >= 0.5 then
-			local fs = STRATA_ORDER[f:GetFrameStrata()] or 1
-			if fs > mStrata or (fs == mStrata and f:GetFrameLevel() >= m:GetFrameLevel()) then
+			if Above(f, m) then
 				f:EnableMouse(false)
 				fixes["mouse off: " .. (f:GetName() or ((f.GetObjectType and f:GetObjectType() or "frame") .. " in " .. ((f:GetParent() and f:GetParent():GetName()) or "?")))] = true
 			end
@@ -696,6 +718,20 @@ function Square:InstallHooks()
 	self.hooked = true
 	WatchLayer(Minimap)
 	WatchLayer(MinimapCluster)
+	-- Edit Mode open: the map holders get their mouse back; closed: the mouse guard again.
+	local em = EditModeManagerFrame
+	if em then
+		if type(em.EnterEditMode) == "function" then
+			hooksecurefunc(em, "EnterEditMode", function()
+				ns.SafeRun("MouseGuard", Square.RestoreHolders, Square)
+			end)
+		end
+		if type(em.ExitEditMode) == "function" then
+			hooksecurefunc(em, "ExitEditMode", function()
+				ns.RunOutOfCombat("mouse-guard", function() ns.SafeRun("MouseGuard", Square.GuardMouse, Square) end)
+			end)
+		end
+	end
 	if not MinimapCluster then return end
 	if MinimapCluster.UpdateMinimapConfig then
 		hooksecurefunc(MinimapCluster, "UpdateMinimapConfig", function()

@@ -39,7 +39,7 @@ The bar hides itself when it has no buttons. Blizzard's event button also goes i
 
 ## How to use it
 
-Mini Map works by itself as soon as you log in. There are no settings.
+Mini Map works by itself as soon as you log in. The only settings are the two compatibility switches (see [Other minimap addons](#other-minimap-addons); `/mmap bookson` and `/mmap zygoron`).
 
 **Move or size the minimap:** open Edit Mode (**Esc > Edit Mode**) and click the minimap.
 
@@ -60,6 +60,8 @@ Mini Map works by itself as soon as you log in. There are no settings.
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
 | `/mmap names` | Hold the mouse over a minimap button and type it to see the button's name, and its textures (size, art, crop, shown, alpha). If a button isn't picked up or looks wrong, tell us what it prints so we can fix it. |
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
+| `/mmap bookson` / `/mmap booksoff` | Turns the Library Books pin fix on or off (see [Library Books](#library-books)). |
+| `/mmap zygoron` / `/mmap zygoroff` | Turns the Zygor solid-line fix on or off (see [Zygor](#zygor)). |
 | `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines and the map's shape. Include it in a bug report about tooltips or the map's shape. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
@@ -69,12 +71,28 @@ Mini Map already looks for new buttons a few times after login and when another 
 - If another addon that changes the minimap is loaded (for example SexyMap, BasicMinimap or ElvUI), Mini Map leaves the minimap's shape alone and says so in chat.
 - If another addon that collects minimap buttons is loaded (for example MinimapButtonButton or HidingBar), Mini Map turns its own bar off and says so in chat.
 
+### Library Books
+
+Works with Library Books by Taraezor. Its far-away minimap pins sit on the square map's edge instead of a curve, and books in the map's corners show at their real spot. Mini Map doesn't change Library Books itself, it only moves its pins on the minimap.
+
+Keep Library Books' **Minimap Border Clamp** option on (its default; `/books o` > Minimap (Advanced)). With it off, Library Books hides the corner pins.
+
+On by default. `/mmap booksoff` turns it off and `/mmap bookson` turns it on again. The choice is saved.
+
+### Zygor
+
+Compatible with Zygor Guides (WoW Forever). When Zygor's "Ant trail style:" is set to **Solid lines** (Zygor options > Maps), the path line on the minimap reaches the square map's edge instead of stopping at a circle. The "Ant trails" style is already square by itself. Mini Map doesn't change Zygor itself, it only lengthens Zygor's own minimap line.
+
+On by default. `/mmap zygoroff` turns it off and `/mmap zygoron` turns it on again. The choice is saved.
+
 ## Known limits
 
 - **Corner clicks don't ping.** The game only pings inside a circle, so clicking in the square map's corners doesn't send a ping.
 - **Some markers may still stop at a circle.** The game draws some markers itself, such as party dots and town or flight-master arrows. Mini Map can't change that, so they may still stop at a circle instead of the square's edge.
 - **One shift after updating.** The map stays in its screen corner after `/reload` and login, and turning Header Underneath on or off no longer moves it. On the first load after you update, it may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
 - **Gathering dots may be missing in the corners.** The game only shows its own gathering dots (ore, herbs) inside its round tracking range, so they may not show in the square map's corners.
+- **Zygor route parts in a far corner aren't drawn yet.** Parts of Zygor's route that only pass through a corner away from you aren't drawn.
+- **Library Books corner dots may look smaller.** Dots in the corners from other zones may look slightly smaller.
 - **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report what it prints on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 ## For people who change the code
@@ -89,8 +107,10 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Core.lua` | Start-up, saved settings, combat queue, other-addon check, `/mmap`. |
 | `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
 | `IconBar.lua` | Finding minimap buttons and laying out the bar. |
+| `Compat_LibraryBooks.lua` | Moves Library Books' far-away pins onto the square's edge. |
+| `Compat_Zygor.lua` | Lengthens Zygor's "Solid lines" minimap path to the square's edge. |
 
-Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload.
+Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload, and the two switches `booksNudge` and `zygorLines`.
 
 ## Licence
 

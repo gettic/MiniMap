@@ -44,4 +44,15 @@ L.DEBUG_SHAPE_OURS = "Mini Map's"
 L.DEBUG_SHAPE_OTHER = "another addon's or the game's"
 L.DEBUG_SHAPE_NONE = "not set"
 
+L.HELP_6 = "/mmap bookson or /mmap booksoff - Library Books' far-away minimap pins on the square's edge (on) or on its own circle (off)."
+L.BOOKS_ON = "Library Books pins now follow the square minimap."
+L.BOOKS_ON_IDLE = "Library Books pins will follow the square minimap (Library Books isn't loaded or the map isn't square now)."
+L.BOOKS_OFF = "Library Books pins are left on their own circle."
+
+L.HELP_7 = "/mmap zygoron or /mmap zygoroff - Zygor's \"Solid lines\" minimap path reaches the square's edge (on) or stops at Zygor's circle (off)."
+L.ZYGOR_ON = "Zygor's solid minimap path now reaches the square's edge."
+L.ZYGOR_ON_IDLE = "Zygor's solid minimap path will reach the square's edge (Zygor isn't loaded or the map isn't square now)."
+L.ZYGOR_OFF = "Zygor's solid minimap path is left as Zygor draws it."
+L.ZYGOR_BROKEN = "Zygor path fix turned off (Zygor has changed). /reload to try again."
+
 L.PART_FAILED = "Part \"%s\" could not start (error shown by the game's error window)."

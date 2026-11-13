@@ -4,6 +4,8 @@ local L = ns.L
 
 local DEFAULTS = {
 	dbVersion = 2,
+	booksNudge = true, -- Library Books pins onto the square edge (Compat_LibraryBooks.lua)
+	zygorLines = true, -- Zygor's solid minimap path line to the square edge (Compat_Zygor.lua)
 }
 
 -- Addons that change the minimap's shape or move it (folder names; best guesses, keep up to date).
@@ -144,6 +146,9 @@ local function Setup()
 	else
 		ns.SafeRun("IconBar", ns.IconBar.Setup, ns.IconBar)
 	end
+
+	ns.SafeRun("LibraryBooks", ns.Books.Setup, ns.Books)
+	ns.SafeRun("Zygor", ns.Zygor.Setup, ns.Zygor)
 end
 
 local events = CreateFrame("Frame")
@@ -163,6 +168,12 @@ events:SetScript("OnEvent", function(_, event, arg1)
 			end
 			if arg1 == "Blizzard_TimeManager" and ns.Square.active then
 				ns.SafeRun("Layer", ns.Square.ApplyLayer, ns.Square) -- clock button loads late
+			end
+			if arg1 == "Library Books" then
+				ns.SafeRun("LibraryBooks", ns.Books.Setup, ns.Books) -- loaded after us
+			end
+			if arg1 == "ZygorGuidesViewerForever" then
+				ns.SafeRun("Zygor", ns.Zygor.Setup, ns.Zygor) -- loaded after us
 			end
 			if ns.IconBar.active then ns.IconBar:RequestScan() end
 		end
@@ -342,11 +353,21 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		else
 			ns.Print(L.RESCANNED, ns.IconBar:Scan())
 		end
+	elseif cmd == "bookson" then
+		ns.Books:SetOn(true)
+	elseif cmd == "booksoff" then
+		ns.Books:SetOn(false)
+	elseif cmd == "zygoron" then
+		ns.Zygor:SetOn(true)
+	elseif cmd == "zygoroff" then
+		ns.Zygor:SetOn(false)
 	else
 		ns.Print(L.HELP_1)
 		ns.Print(L.HELP_2)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)
+		ns.Print(L.HELP_6)
+		if ns.Zygor.IsZygorLoaded() then ns.Print(L.HELP_7) end
 	end
 end

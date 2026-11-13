@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-> **Beta.** Version 0.1.0-rc.2 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+> **Beta.** Version 0.1.0-rc.3 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)
@@ -70,7 +70,7 @@ Mini Map already looks for new buttons a few times after login and when another 
 ## Known limits
 
 - **Corner clicks don't ping.** The game only pings inside a circle, so clicking in the square map's corners doesn't send a ping.
-- **One shift after updating.** The map stays in its screen corner after `/reload` and login. On the very first load after you update, it may still shift once. If you save Edit Mode in that session, move the map back into the corner once.
+- **One shift after updating.** The map stays in its screen corner after `/reload` and login, and turning Header Underneath on or off no longer moves it. On the first load after you update, it may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
 - **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report what it prints on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 ## For people who change the code

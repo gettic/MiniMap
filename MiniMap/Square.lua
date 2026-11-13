@@ -83,6 +83,51 @@ local function Usable(f)
 	return f and f.ClearAllPoints and not (f.IsForbidden and f:IsForbidden()) and not (f.IsProtected and f:IsProtected())
 end
 
+-- Stand-ins: Blizzard sizes MinimapCluster (ResizeLayoutFrame) to its shown direct children.
+-- Moving its children into the map shrank that box at the next re-layout (Header Underneath),
+-- and the map jumped. Each moved child gets an invisible frame of ours at the child's own
+-- Blizzard anchors, size and scale, shown when it is, so the box stays Blizzard's.
+-- Copied only on the setup / UpdateMinimapConfig / SetHeaderUnderneath path (Square.copying),
+-- never during a size change or Blizzard's layout. Plain frames: no layout fields, no templates.
+local standIns = {}
+
+local function OursOrMap(rel)
+	return rel ~= nil and (rel == Minimap or rel == Square.header or rel == Square.border)
+end
+
+-- OnShow/OnHide of the Blizzard child: touches only our stand-in.
+local function MirrorShown(f)
+	local s = standIns[f]
+	if s then s:SetShown(f:IsShown()) end
+end
+
+-- Call before moving f. ownScale: we rescale f ourselves, so keep Blizzard's scale.
+local function StandIn(f, ownScale)
+	if not Square.copying then return end
+	if not (Usable(f) and MinimapCluster and f:GetParent() == MinimapCluster) then return end
+	local s = standIns[f]
+	if not s then
+		s = CreateFrame("Frame", nil, MinimapCluster)
+		s:EnableMouse(false)
+		standIns[f] = s
+		f:HookScript("OnShow", MirrorShown)
+		f:HookScript("OnHide", MirrorShown)
+	end
+	local n = f:GetNumPoints()
+	local _, rel = f:GetPoint(1)
+	if n > 0 and not OursOrMap(rel) then -- still Blizzard's anchors: copy them
+		s:ClearAllPoints()
+		for i = 1, n do
+			local p, r, rp, x, y = f:GetPoint(i)
+			s:SetPoint(p, r, rp, x, y)
+		end
+		if ownScale then s:SetScale(f:GetScale()) end
+	end
+	if not ownScale then s:SetScale(f:GetScale()) end
+	s:SetSize(f:GetSize())
+	s:SetShown(f:IsShown())
+end
+
 -- Our strip behind the header: a child of our border (hides with the map), same look as the bar.
 function Square:CreateHeader()
 	if self.header or not self.border then return end
@@ -108,6 +153,7 @@ function Square:PlaceHeader(under)
 	h:SetFrameStrata(T.layer)
 	h:SetFrameLevel(math.max(0, MinimapCluster:GetFrameLevel()))
 	local gap = T.headerPad / s -- map pixels -> strip units
+	StandIn(zone)
 	h:ClearAllPoints()
 	zone:ClearAllPoints()
 	if under then
@@ -125,6 +171,7 @@ end
 -- Blizzard's zoom buttons sit in the bottom-right corner and must stay clickable.
 local function PutInCorner(f, point)
 	if not Usable(f) then return end
+	StandIn(f)
 	local fs = f:GetEffectiveScale()
 	local k = (fs and fs > 0) and Minimap:GetEffectiveScale() / fs or 1 -- map pixels -> own units
 	local x = (point:find("LEFT") and 1 or -1) * T.cornerInset * k
@@ -153,6 +200,7 @@ function Square:PlaceDiel(under)
 	local ps = parent and parent:GetEffectiveScale() or 1
 	local k = (ps > 0) and Minimap:GetEffectiveScale() / ps or 1
 	local s = T.dielSize / w
+	StandIn(d, true)
 	d:SetScale(s * k)
 	local off = T.dielInset / s -- map pixels -> disc units
 	local point = under and "TOPLEFT" or "BOTTOMLEFT"
@@ -282,15 +330,21 @@ function Square:QueueFit()
 end
 
 -- All three, after combat if needed. `under` = the value Blizzard just applied, if known.
-function Square:PlacePieces(under)
+-- `copy`: also refresh the stand-ins (setup, UpdateMinimapConfig, SetHeaderUnderneath only);
+-- kept until the queued job runs, so a combat delay doesn't lose it.
+function Square:PlacePieces(under, copy)
 	if not self.active then return end
 	if under ~= nil then self.under = under and true or false end
+	if copy then self.copyPending = true end
 	ns.RunOutOfCombat("square-pieces", function()
 		local u = self.under
 		if u == nil then u = Square.HeaderIsUnderneath() end
+		self.copying = self.copyPending and true or false
+		self.copyPending = false
 		ns.SafeRun("Header", self.PlaceHeader, self, u)
 		ns.SafeRun("Corners", self.PlaceCorners, self, u)
 		ns.SafeRun("DayNight", self.PlaceDiel, self, u)
+		self.copying = false
 		ns.SafeRun("Layer", self.ApplyLayer, self)
 		self:QueueFit()
 	end)
@@ -359,14 +413,14 @@ function Square:InstallHooks()
 	if MinimapCluster.UpdateMinimapConfig then
 		hooksecurefunc(MinimapCluster, "UpdateMinimapConfig", function()
 			Square:Reapply()
-			Square:PlacePieces()
+			Square:PlacePieces(nil, true)
 		end)
 	end
 	if MinimapCluster.SetHeaderUnderneath then
-		hooksecurefunc(MinimapCluster, "SetHeaderUnderneath", function(_, under) Square:PlacePieces(under) end)
+		hooksecurefunc(MinimapCluster, "SetHeaderUnderneath", function(_, under) Square:PlacePieces(under, true) end)
 	end
 	if MinimapCluster.SetEditModeScale then
-		hooksecurefunc(MinimapCluster, "SetEditModeScale", function() Square:PlacePieces() end)
+		hooksecurefunc(MinimapCluster, "SetEditModeScale", function() Square:PlacePieces(nil, true) end)
 	end
 	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.
 	if MinimapCluster.HookScript then
@@ -392,7 +446,7 @@ function Square:Setup()
 	self:PlaceCoords()
 	self:CreateHeader()
 	self:InstallHooks()
-	self:PlacePieces(Square.HeaderIsUnderneath())
+	self:PlacePieces(Square.HeaderIsUnderneath(), true)
 	-- Box and clamp now, not next frame, so they are set before Edit Mode places the cluster.
 	ns.RunOutOfCombat("edit-fit", function()
 		ns.SafeRun("EditModeBox", Square.FitSelection, Square)

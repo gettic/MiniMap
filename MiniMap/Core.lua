@@ -4,7 +4,8 @@ local L = ns.L
 
 local DEFAULTS = {
 	dbVersion = 1,
-	oreLabels = false, -- ore icon + short name on mining nodes' minimap tooltips (/mmap ore)
+	oreLabels = false, -- ore pins on the minimap at nodes the player mined (/mmap ore)
+	-- orePins (table, [mapID] = { { x, y, itemID }, ... }) is made in InitDB, never reset.
 }
 
 -- Addons that change the minimap's shape or move it (folder names; best guesses, keep up to date).
@@ -96,6 +97,7 @@ local function InitDB()
 	for k, v in pairs(DEFAULTS) do
 		if MiniMapForeverDB[k] == nil then MiniMapForeverDB[k] = v end
 	end
+	if type(MiniMapForeverDB.orePins) ~= "table" then MiniMapForeverDB.orePins = {} end
 	ns.db = MiniMapForeverDB
 end
 
@@ -138,7 +140,7 @@ local function Setup()
 		ns.SafeRun("IconBar", ns.IconBar.Setup, ns.IconBar)
 	end
 
-	ns.SafeRun("OreLabels", ns.OreLabels.Setup, ns.OreLabels)
+	ns.SafeRun("OrePins", ns.OrePins.Setup, ns.OrePins)
 end
 
 local events = CreateFrame("Frame")
@@ -256,8 +258,8 @@ local function PrintPos()
 	end
 end
 
--- `/mmap debug`: tooltip owner and raw lines (| shown as ||), the minimap shape, the saved ore
--- setting and the installed ore hooks. Read-only; every read in pcall, secret values skipped.
+-- `/mmap debug`: tooltip owner and raw lines (| shown as ||), the minimap shape, the ore pin
+-- setting and counts, and the last mined node. Read-only; every read in pcall, secret values skipped.
 local function IsSecret(v)
 	if not issecretvalue then return false end
 	local ok, secret = pcall(issecretvalue, v)
@@ -310,10 +312,16 @@ local function PrintDebug()
 		whose = (GetMinimapShape == ns.ShapeFn) and L.DEBUG_SHAPE_OURS or L.DEBUG_SHAPE_OTHER
 	end
 	ns.Print(L.DEBUG_SHAPE, shape, whose)
-	local p = ns.OreLabels and ns.OreLabels.paths or {}
+	local P = ns.OrePins
 	local saved = MiniMapForeverDB and MiniMapForeverDB.oreLabels
-	ns.Print(L.DEBUG_ORE, tostring(saved), tostring(p.mouseover), tostring(p.dataPostCall),
-		tostring(p.onShow), tostring(p.onUpdate))
+	local mapID
+	if C_Map and C_Map.GetBestMapForUnit then
+		local ok, m = pcall(C_Map.GetBestMapForUnit, "player")
+		if ok and type(m) == "number" and not IsSecret(m) then mapID = m end
+	end
+	ns.Print(L.DEBUG_ORE, tostring(saved), P.Count(mapID), tostring(mapID or "-"), (P.CountAll()),
+		P.ShownCount(), tostring(P.TickerRunning()))
+	ns.Print(L.DEBUG_LEARN, P.lastLearn or L.DEBUG_LEARN_NONE)
 end
 
 SLASH_MINIMAPFOREVER1 = "/mmap"
@@ -327,11 +335,15 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		local ok = pcall(PrintDebug)
 		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
 	elseif msg == "ore" and ns.db then
-		ns.OreLabels:Status()
+		ns.OrePins:Status()
 	elseif msg == "ore on" and ns.db then
-		ns.OreLabels:Set(true)
+		ns.OrePins:Set(true)
 	elseif msg == "ore off" and ns.db then
-		ns.OreLabels:Set(false)
+		ns.OrePins:Set(false)
+	elseif msg == "ore clear" and ns.db then
+		ns.OrePins:Clear(false)
+	elseif msg == "ore clear all" and ns.db then
+		ns.OrePins:Clear(true)
 	elseif msg == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)

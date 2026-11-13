@@ -79,11 +79,15 @@ local Theme = {
 	-- this many levels above the bar, over every slot (+2) and slot overlay (+3). Same strata.
 	popupLevel = 20,
 
-	-- Ore labels in the minimap tooltip (OreLabels.lua). Colours come from Blizzard's
+	-- Ore pins on the minimap (OrePins.lua). Colours come from Blizzard's
 	-- `QuestDifficultyColors` (same as the trade skill window) by these keys; the numbers are
-	-- the fallback when that table is missing. `iconSize` 0 = the tooltip text's height.
+	-- the fallback when that table is missing.
 	ore = {
-		iconSize = 0,
+		pinSize = 12,          -- icon size in map pixels
+		pinLevel = 5,          -- frame levels above the map
+		pinFont = "GameFontHighlightSmallOutline", -- GameFontHighlightSmall if missing
+		namesWhenAtMost = 4,   -- names always shown when this many pins or fewer are on the map
+
 		fallbackIcon = "Interface\\Icons\\INV_Misc_QuestionMark",
 		neutral = { 1, 1, 1 }, -- Mining skill unknown
 		colors = {

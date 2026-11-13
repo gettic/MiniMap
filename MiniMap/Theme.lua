@@ -33,6 +33,18 @@ local Theme = {
 
 	-- Player coordinates, moved inside the map's bottom edge.
 	coordsOffsetY = 4,
+	-- Dark box behind them: Blizzard's tooltip background file tinted black (fallback: plain
+	-- white square, same tint). `atlas` (checked first) is free for a theme. padX/padY: map px
+	-- around the text; throttle: seconds between size checks.
+	coordsBox = {
+		atlas = nil,
+		file = "Interface\\Tooltips\\UI-Tooltip-Background",
+		fallback = "Interface\\BUTTONS\\WHITE8X8",
+		color = { 0, 0, 0, 0.6 },
+		padX = 4,
+		padY = 2,
+		throttle = 0.1,
+	},
 
 	-- Bar slots: every button gets the same square slot (iconSize), its icon inset and
 	-- cropped, and Blizzard's action-button frame, hover and pressed art over it.
@@ -66,6 +78,10 @@ local Theme = {
 
 	-- Mail and addon compartment: in the map's corners, this far in (map pixels).
 	cornerInset = 5,
+	-- Addon compartment (addon counter): bottom-right, raised this many map px more so it sits
+	-- above Blizzard's zoom buttons and their 40 px hover box (which reaches 42 px up).
+	compartmentPoint = "BOTTOMRIGHT",
+	compartmentRaise = 39, -- 5 + 39 = 44 px up
 
 	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
 	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",
@@ -78,6 +94,11 @@ local Theme = {
 	-- Popups a bar button opens (a child frame bigger than its slot or reaching outside it) sit
 	-- this many levels above the bar, over every slot (+2) and slot overlay (+3). Same strata.
 	popupLevel = 20,
+
+	-- Path pieces we draw for another addon's minimap path (Compat_Zygor.lua corner pieces):
+	-- Blizzard's flight-path line atlas, else a plain white square file tinted in the path's
+	-- colour. Thickness and alpha are multiplied onto the path's own.
+	pathLine = { atlas = "_UI-Taxi-Line-horizontal", file = "Interface\\BUTTONS\\WHITE8X8", thicknessScale = 1, alpha = 1 },
 }
 ns.Theme = Theme
 

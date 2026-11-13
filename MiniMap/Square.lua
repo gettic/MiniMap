@@ -86,6 +86,70 @@ function Square:PlaceCoords()
 	coords:SetFrameLevel(Minimap:GetFrameLevel() + 5)
 end
 
+-- Dark box behind Blizzard's coordinates (our own frame, under the text). Blizzard writes the
+-- text every 0.1 s (or "" when off / no position) and never hides the frame itself, so the box
+-- follows the text's size. Driven by HookScript on PlayerCoords (no fields on Blizzard frames),
+-- with our own 0.1 s throttle; the first error turns the box off for good (one chat line).
+local boxWait, boxW, boxH, boxBroken = 0, nil, nil, false
+
+local function UpdateCoordsBox()
+	local box, coords = Square.coordsBox, Square.coordsFrame
+	local text = coords and coords.CoordText
+	if not (box and text) then return end
+	local s = text:GetText()
+	if not s or s == "" or not coords:IsVisible() then
+		box:Hide()
+		return
+	end
+	local c = T.coordsBox
+	local w = text:GetStringWidth() + 2 * c.padX
+	local h = text:GetStringHeight() + 2 * c.padY
+	if w ~= boxW or h ~= boxH then
+		boxW, boxH = w, h
+		box:SetSize(w, h)
+	end
+	box:Show()
+end
+
+local function CoordsTick(_, elapsed)
+	if boxBroken then return end
+	boxWait = boxWait - (elapsed or 0)
+	if boxWait > 0 then return end
+	boxWait = T.coordsBox.throttle
+	-- SafeRun: error window + one chat line; then off until /reload (no error loop).
+	if not ns.SafeRun("CoordsBox", UpdateCoordsBox) then
+		boxBroken = true
+		if Square.coordsBox then Square.coordsBox:Hide() end
+	end
+end
+
+local function CoordsHidden()
+	if Square.coordsBox then Square.coordsBox:Hide() end
+end
+
+function Square:CreateCoordsBox()
+	if self.coordsBox then return end
+	local c = Container()
+	local coords = c and c.PlayerCoords
+	local text = coords and coords.CoordText
+	if not (text and coords.HookScript and text.GetStringWidth) then return end
+	local box = CreateFrame("Frame", "MiniMapForeverCoordsBox", Minimap)
+	box:EnableMouse(false)
+	box:SetFrameLevel(Minimap:GetFrameLevel() + 4) -- under PlayerCoords (+5)
+	local tex = box:CreateTexture(nil, "BACKGROUND")
+	tex:SetAllPoints(box)
+	T.SetAtlasOr(tex, T.coordsBox.atlas, T.coordsBox.file or T.coordsBox.fallback)
+	if not tex:GetTexture() and not (tex.GetAtlas and tex:GetAtlas()) then
+		tex:SetTexture(T.coordsBox.fallback)
+	end
+	tex:SetVertexColor(unpack(T.coordsBox.color))
+	box:SetPoint("CENTER", text, "CENTER", 0, 0)
+	box:Hide()
+	self.coordsBox, self.coordsFrame = box, coords
+	coords:HookScript("OnUpdate", CoordsTick)
+	coords:HookScript("OnHide", CoordsHidden)
+end
+
 ---------------------------------------------------------------------------
 -- Header strip, mail/compartment corners, day/night disc
 -- Only Blizzard's child pieces are moved (ZoneTextButton, IndicatorFrame,
@@ -189,15 +253,17 @@ function Square:PlaceHeader(under)
 end
 
 -- Mail (IndicatorFrame) top-left inside the map (bottom-left with Header Underneath: the
--- day/night disc then takes the top-left). The addon compartment always goes top-right:
--- Blizzard's zoom buttons sit in the bottom-right corner and must stay clickable.
-local function PutInCorner(f, point)
+-- day/night disc then takes the top-left). The addon compartment always goes bottom-right,
+-- on the right edge just above Blizzard's zoom buttons and their 40 px hover box (they own
+-- the corner itself and must stay clickable). Out of combat (square-pieces queue).
+-- `inX`/`inY`: extra map pixels inward (beyond cornerInset) from the corner's sides.
+local function PutInCorner(f, point, inX, inY)
 	if not Usable(f) then return end
 	StandIn(f)
 	local fs = f:GetEffectiveScale()
 	local k = (fs and fs > 0) and Minimap:GetEffectiveScale() / fs or 1 -- map pixels -> own units
-	local x = (point:find("LEFT") and 1 or -1) * T.cornerInset * k
-	local y = (point:find("TOP") and -1 or 1) * T.cornerInset * k
+	local x = (point:find("LEFT") and 1 or -1) * (T.cornerInset + (inX or 0)) * k
+	local y = (point:find("TOP") and -1 or 1) * (T.cornerInset + (inY or 0)) * k
 	f:ClearAllPoints()
 	f:SetPoint(point, Minimap, point, x, y)
 	if f:GetFrameLevel() <= Minimap:GetFrameLevel() + 5 then
@@ -207,7 +273,7 @@ end
 
 function Square:PlaceCorners(under)
 	PutInCorner(MinimapCluster and MinimapCluster.IndicatorFrame, under and "BOTTOMLEFT" or "TOPLEFT")
-	PutInCorner(AddonCompartmentFrame, "TOPRIGHT")
+	PutInCorner(AddonCompartmentFrame, T.compartmentPoint, 0, T.compartmentRaise)
 end
 
 -- Blizzard's day/night disc (Forever: MinimapCluster.DielFrame, sized by the atlas, on the old
@@ -247,8 +313,48 @@ local function ScreenRect(f)
 	return (l + i) * s, (r - i) * s, (t - i) * s, (b + i) * s
 end
 
+-- Edit Mode's live toggles (Header Underneath) re-lay the cluster but never re-anchor it, so a
+-- screen-clamp push from the old insets stays until saving. While Edit Mode is open, put the
+-- cluster back on Edit Mode's own anchor (systemInfo.anchorInfo, read only), like the anchor lines
+-- of Blizzard's ApplySystemAnchor; plain ClearAllPoints/SetPoint, never Blizzard's functions.
+local function ValidAnchor(a)
+	return type(a) == "table" and type(a.point) == "string" and type(a.relativePoint) == "string"
+		and type(a.offsetX) == "number" and type(a.offsetY) == "number"
+		and (a.relativeTo == nil or type(a.relativeTo) == "string" or type(a.relativeTo) == "table")
+end
+
+local function Reanchor()
+	if InCombatLockdown() then return end
+	local c = MinimapCluster
+	if not Usable(c) then return end
+	local em = EditModeManagerFrame
+	if not (em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive()) then return end
+	if c.isDragging then return end
+	local info = c.systemInfo
+	local a = type(info) == "table" and info.anchorInfo
+	if not ValidAnchor(a) then return end
+	local a2 = info.anchorInfo2
+	if a2 ~= nil and not ValidAnchor(a2) then return end
+	local scale = c:GetScale()
+	if not (scale and scale > 0) then return end
+	c:ClearAllPoints()
+	c:SetPoint(a.point, a.relativeTo or "UIParent", a.relativePoint, a.offsetX / scale, a.offsetY / scale)
+	if a2 then
+		c:SetPoint(a2.point, a2.relativeTo or "UIParent", a2.relativePoint, a2.offsetX / scale, a2.offsetY / scale)
+	end
+end
+
+local function ClampChanged(old, new)
+	if not (old and new) then return old ~= new end
+	for i = 1, 4 do
+		if math.abs((old[i] or 0) - (new[i] or 0)) > 0.05 then return true end
+	end
+	return false
+end
+
 function Square:FitSelection()
 	if not self.active then return end
+	local oldClamp = self.fit and self.fit.clamp
 	local c = MinimapCluster
 	local sel = c and c.Selection
 	if not (Usable(c) and Usable(sel) and sel.SetPoint and sel.SetAllPoints) then return end
@@ -287,6 +393,8 @@ function Square:FitSelection()
 		ns.db.editFit = { sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
 	end
 	self:ApplyClamp()
+	-- New insets in Edit Mode: undo a stale clamp push (only inside Edit Mode, out of combat).
+	if ClampChanged(oldClamp, self.fit.clamp) then Reanchor() end
 end
 
 -- Puts a box + clamp set on the cluster (no rect reads, out of combat).
@@ -389,6 +497,7 @@ local function LayerFrames()
 		AddonCompartmentFrame, GameTimeFrame, TimeManagerClockButton,
 		backdrop, backdrop and backdrop.ExternalEventURLButton,
 		Square.border, Square.header, ns.IconBar and ns.IconBar.frame,
+		Square.coordsBox,
 	}
 end
 
@@ -397,7 +506,7 @@ function Square:ApplyLayer()
 	ns.RunOutOfCombat("layer", function()
 		self.layering = true
 		local list = LayerFrames()
-		for i = 1, 15 do -- fixed length: the list may hold nils
+		for i = 1, 16 do -- fixed length: the list may hold nils
 			local f = list[i]
 			if Usable(f) and f.SetFrameStrata and f:GetFrameStrata() ~= T.layer then
 				f:SetFrameStrata(T.layer)
@@ -466,6 +575,7 @@ function Square:Setup()
 	self:HideRoundArt()
 	self:CreateBorder()
 	self:PlaceCoords()
+	ns.SafeRun("CoordsBox", self.CreateCoordsBox, self)
 	self:CreateHeader()
 	self:InstallHooks()
 	self:PlacePieces(Square.HeaderIsUnderneath(), true)

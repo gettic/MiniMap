@@ -20,9 +20,9 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 | No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
 | Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
 | Header | The zone name, clock, calendar and tracking buttons sit in their own bordered strip just above the map. |
-| Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment in the top-right corner. |
+| Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment (the addon counter) in the bottom-right corner, just above the zoom buttons. |
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
-| Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. |
+| Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. A small see-through dark box behind them makes them easier to read. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it, and Edit Mode's box fits the map, header and bar. |
 | Layer | The map, its border, the header strip, the bar and the buttons sit in the background layer, so other addons' windows always draw over them. |
 
@@ -47,7 +47,7 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 |---|---|
 | Drag to move | The map, its border and the button bar move together. |
 | Size | The map, border, bar and buttons scale together. |
-| Header Underneath | The header strip goes under the map and the button bar above it. The mail icon moves to the bottom-left corner and the day/night disc to the top-left corner. The addon compartment stays top-right, so it never covers the zoom buttons. |
+| Header Underneath | The header strip goes under the map and the button bar above it. The mail icon moves to the bottom-left corner and the day/night disc to the top-left corner. The addon compartment stays bottom-right. |
 | Selection box | The box covers the map, its header strip and the button bar, so you can move the map flush into a screen corner. It snaps by those visible edges. |
 | Rotate Minimap | The map turns inside the square. |
 | Icon Size | The map markers resize as normal. |
@@ -81,7 +81,7 @@ On by default. `/mmap booksoff` turns it off and `/mmap bookson` turns it on aga
 
 ### Zygor
 
-Compatible with Zygor Guides (WoW Forever). When Zygor's "Ant trail style:" is set to **Solid lines** (Zygor options > Maps), the path line on the minimap reaches the square map's edge instead of stopping at a circle. The "Ant trails" style is already square by itself. Mini Map doesn't change Zygor itself, it only lengthens Zygor's own minimap line.
+Compatible with Zygor Guides (WoW Forever). When Zygor's "Ant trail style:" is set to **Solid lines** (Zygor options > Maps), the path line on the minimap reaches the square map's edge instead of stopping at a circle. Parts of the route that only pass through a corner of the map, away from you, get a plain solid line in the path's colour (Zygor draws nothing there). The "Ant trails" style is already square by itself. Mini Map doesn't change Zygor itself, it only lengthens Zygor's own minimap line.
 
 On by default. `/mmap zygoroff` turns it off and `/mmap zygoron` turns it on again. The choice is saved.
 
@@ -89,9 +89,9 @@ On by default. `/mmap zygoroff` turns it off and `/mmap zygoron` turns it on aga
 
 - **Corner clicks don't ping.** The game only pings inside a circle, so clicking in the square map's corners doesn't send a ping.
 - **Some markers may still stop at a circle.** The game draws some markers itself, such as party dots and town or flight-master arrows. Mini Map can't change that, so they may still stop at a circle instead of the square's edge.
-- **One shift after updating.** The map stays in its screen corner after `/reload` and login, and turning Header Underneath on or off no longer moves it. On the first load after you update, it may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
+- **One shift after updating.** On the first load after you update, the map may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
 - **Gathering dots may be missing in the corners.** The game only shows its own gathering dots (ore, herbs) inside its round tracking range, so they may not show in the square map's corners.
-- **Zygor route parts in a far corner aren't drawn yet.** Parts of Zygor's route that only pass through a corner away from you aren't drawn.
+- **Zygor corner route parts look different.** Parts of the route in a far corner are a plain solid line, not Zygor's dashed line.
 - **Library Books corner dots may look smaller.** Dots in the corners from other zones may look slightly smaller.
 - **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report what it prints on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 

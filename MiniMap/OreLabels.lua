@@ -1,7 +1,7 @@
 -- Mini Map: ore labels. When the mouse is over a mining node on the minimap, its tooltip line
 -- shows the ore's own item icon and a short name, coloured by the player's Mining skill
 -- (orange/yellow/green/grey, like the trade skill window). Off unless `ns.db.oreLabels`.
--- Only post-hooks GameTooltip:SetMinimapMouseover (hooksecurefunc); never touches the map.
+-- Only post-hooks (hooksecurefunc, tooltip-data post-call, HookScript); never touches the map.
 local ADDON, ns = ...
 local L, T = ns.L, ns.Theme
 
@@ -136,35 +136,66 @@ local function Label(node)
 	return ("|T%s:%d|t %s%s|r"):format(tostring(Icon(itemID)), T.ore.iconSize, ColorCode(key), short)
 end
 
--- One tooltip line may hold several names (one per row). Returns the new text, or nil when
--- no known node is in it.
+-- Node name of one row, with icons (|T..|t, |A..|a) and colour codes (|c..., |cn...:, |r)
+-- taken out.
+local function NodeOf(piece)
+	local name = piece:gsub("|T.-|t", ""):gsub("|A.-|a", "")
+	name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|cn[^:|]*:", ""):gsub("|r", "")
+	return NODES[name:match("^%s*(.-)%s*$")]
+end
+
+-- One tooltip line may hold several names (rows split by a new line or "|n"). Returns the new
+-- text, or nil when no known node is in it. A label has no known name in it, so a line is
+-- never relabelled twice.
 function Ore.Relabel(text)
-	local out, hit = {}, false
-	for piece in (text .. "\n"):gmatch("(.-)\n") do
-		local name = piece:gsub("|c%x%x%x%x%x%x%x%x", "")
-		name = name:gsub("|r", "")
-		name = name:match("^%s*(.-)%s*$")
-		local node = NODES[name]
+	local out, hit, pos = {}, false, 1
+	while true do
+		local s, e = text:find("\n", pos, true)
+		local s2, e2 = text:find("|n", pos, true)
+		if s2 and (not s or s2 < s) then s, e = s2, e2 end
+		local piece = text:sub(pos, s and s - 1 or nil)
+		local node = NodeOf(piece)
 		if node then
 			hit = true
 			out[#out + 1] = Label(node)
 		else
 			out[#out + 1] = piece
 		end
+		if not s then break end
+		out[#out + 1] = text:sub(s, e)
+		pos = e + 1
 	end
-	return hit and table.concat(out, "\n") or nil
+	return hit and table.concat(out) or nil
 end
 
 ---------------------------------------------------------------------------
 -- Tooltip hook
 ---------------------------------------------------------------------------
-local function OnMinimapMouseover(tip)
-	if not (ns.db and ns.db.oreLabels) then return end
+-- Three ways in (whichever the client uses for the minimap tooltip; all do the same, and a
+-- line already relabelled is left alone): the GameTooltip:SetMinimapMouseover post-hook, the
+-- tooltip-data post-call for MinimapMouseover tooltips, and GameTooltip OnShow/OnUpdate while
+-- the mouse is over the minimap. Secret lines are skipped, never worked around.
+local relabeling = false
+
+local function On()
+	return ns.db and ns.db.oreLabels
+end
+
+local function MouseOnMap()
+	if not (Minimap and Minimap.IsMouseOver) then return false end
+	local ok, over = pcall(Minimap.IsMouseOver, Minimap)
+	return ok and Plain(over) and over == true
+end
+
+-- `show`: re-size the tooltip to the new text (not inside the tooltip-data post-call, where
+-- Blizzard shows the tooltip itself right after).
+local function RelabelTip(tip, show)
+	if relabeling or not On() then return end
 	local ok, count = pcall(tip.NumLines, tip)
 	count = ok and Num(count)
 	if not count or count == 0 then return end
-	local prefix = tip:GetName()
-	if not prefix then return end
+	local okName, prefix = pcall(tip.GetName, tip)
+	if not (okName and Plain(prefix) and type(prefix) == "string") then return end
 	local changed = false
 	for i = 1, count do
 		local fs = _G[prefix .. "TextLeft" .. i]
@@ -179,40 +210,85 @@ local function OnMinimapMouseover(tip)
 			end
 		end
 	end
-	if changed then tip:Show() end -- re-size to the new text
+	if changed and show then
+		relabeling = true
+		pcall(tip.Show, tip)
+		relabeling = false
+	end
 end
 
+-- Runs every frame while the mouse is on the map: errors are reported once, then skipped quietly.
+local reported = false
+
+local function Guarded(tip, show)
+	local ok, err = pcall(RelabelTip, tip, show)
+	if not ok and not reported then
+		reported = true
+		local handler = geterrorhandler and geterrorhandler()
+		if handler then handler(err) end
+	end
+end
+
+-- Installed hooks, by path (also printed by /mmap debug).
+Ore.paths = { mouseover = false, dataPostCall = false, onShow = false, onUpdate = false }
 Ore.hooked = false
 
--- Hooks once; the hook does nothing while the setting is off. False if the client lacks it.
+-- Installs every path the client has, once each; they do nothing while the setting is off.
+-- False if none could be installed.
 function Ore:Hook()
-	if self.hooked then return true end
-	if not (GameTooltip and type(GameTooltip.SetMinimapMouseover) == "function") then return false end
-	-- Runs every frame while the mouse is on the map: errors are reported once, then skipped quietly.
-	local reported = false
-	hooksecurefunc(GameTooltip, "SetMinimapMouseover", function(tip)
-		local ok, err = pcall(OnMinimapMouseover, tip)
-		if not ok and not reported then
-			reported = true
-			local handler = geterrorhandler and geterrorhandler()
-			if handler then handler(err) end
+	local p = self.paths
+	local tip = GameTooltip
+	if not tip then return self.hooked end
+	if not p.mouseover and type(tip.SetMinimapMouseover) == "function" then
+		hooksecurefunc(tip, "SetMinimapMouseover", function(t)
+			if On() then Guarded(t, true) end
+		end)
+		p.mouseover = true
+	end
+	local types = Enum and Enum.TooltipDataType
+	if not p.dataPostCall and types and types.MinimapMouseover and TooltipDataProcessor
+		and type(TooltipDataProcessor.AddTooltipPostCall) == "function" then
+		local ok = pcall(TooltipDataProcessor.AddTooltipPostCall, types.MinimapMouseover, function(t)
+			if On() and t == GameTooltip then Guarded(t, false) end
+		end)
+		p.dataPostCall = ok
+	end
+	if tip.HookScript then
+		if not p.onShow then
+			tip:HookScript("OnShow", function(t)
+				if On() and MouseOnMap() then Guarded(t, true) end
+			end)
+			p.onShow = true
 		end
-	end)
-	self.hooked = true
-	return true
+		-- Every frame, but leaves at once unless the setting is on, the tooltip is shown and
+		-- the mouse is on the map (a throttle would make the label blink: the map rewrites the
+		-- tooltip every frame).
+		if not p.onUpdate then
+			tip:HookScript("OnUpdate", function(t)
+				if On() and MouseOnMap() then Guarded(t, true) end
+			end)
+			p.onUpdate = true
+		end
+	end
+	self.hooked = p.mouseover or p.dataPostCall or p.onShow or p.onUpdate
+	return self.hooked
 end
 
 function Ore:Setup()
-	if ns.db and ns.db.oreLabels then self:Hook() end
+	if On() then self:Hook() end
 end
 
--- `/mmap ore`: on/off, saved.
-function Ore:Toggle()
-	local on = not ns.db.oreLabels
+-- `/mmap ore on|off`: sets it (saved); hooks at once when turned on.
+function Ore:Set(on)
 	if on and not self:Hook() then
 		ns.Print(L.ORE_MISSING)
 		return
 	end
-	ns.db.oreLabels = on
+	ns.db.oreLabels = on and true or false
 	ns.Print(on and L.ORE_ON or L.ORE_OFF)
+end
+
+-- `/mmap ore`: shows the state only.
+function Ore:Status()
+	ns.Print(On() and L.ORE_STATUS_ON or L.ORE_STATUS_OFF)
 end

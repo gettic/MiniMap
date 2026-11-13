@@ -18,6 +18,18 @@ local BAR_ADDONS = {
 }
 
 ---------------------------------------------------------------------------
+-- Minimap shape for other addons (LibDBIcon, HereBeDragons...): set as soon as this file
+-- loads, so addons that ask early see "SQUARE" too. Only if nobody defined it; never
+-- overwrites another addon's. Taken back in Setup if the square map doesn't run.
+---------------------------------------------------------------------------
+function ns.ShapeFn() return "SQUARE" end
+if not GetMinimapShape then GetMinimapShape = ns.ShapeFn end
+
+local function ReleaseShape()
+	if GetMinimapShape == ns.ShapeFn then GetMinimapShape = nil end
+end
+
+---------------------------------------------------------------------------
 -- Helpers
 ---------------------------------------------------------------------------
 function ns.Print(fmt, ...)
@@ -96,7 +108,8 @@ local function CheckOtherAddons()
 	if not shapeBy and Minimap and container and Minimap:GetParent() ~= container then
 		shapeBy = L.OTHER_ADDON -- someone already moved the minimap out of Blizzard's frame
 	end
-	if not shapeBy and GetMinimapShape and not issecurevariable("GetMinimapShape") then
+	if not shapeBy and GetMinimapShape and GetMinimapShape ~= ns.ShapeFn
+		and not issecurevariable("GetMinimapShape") then
 		shapeBy = L.OTHER_ADDON -- another addon already says what shape the minimap is
 	end
 	ns.shapeConflict = shapeBy
@@ -117,6 +130,7 @@ local function Setup()
 	else
 		ns.SafeRun("Square", ns.Square.Setup, ns.Square)
 	end
+	if not ns.Square.active then ReleaseShape() end -- map stays round: don't say square
 
 	if ns.barConflict then
 		ns.Print(L.BAR_CONFLICT, ns.barConflict)
@@ -242,15 +256,82 @@ local function PrintPos()
 	end
 end
 
+-- `/mmap debug`: tooltip owner and raw lines (| shown as ||), the minimap shape, the saved ore
+-- setting and the installed ore hooks. Read-only; every read in pcall, secret values skipped.
+local function IsSecret(v)
+	if not issecretvalue then return false end
+	local ok, secret = pcall(issecretvalue, v)
+	return not ok or secret
+end
+
+local function Readable(v)
+	if IsSecret(v) then return L.DEBUG_SECRET end
+	local ok, s = pcall(function() return (tostring(v):gsub("|", "||")) end)
+	return ok and s or L.DEBUG_UNREADABLE
+end
+
+local function PrintDebug()
+	local tip = GameTooltip
+	local owner, shown, count = "-", "-", "-"
+	if tip then
+		local ok, o = pcall(tip.GetOwner, tip)
+		if ok and o and not IsSecret(o) then
+			local okN, name = pcall(o.GetName, o)
+			if okN and name then
+				owner = Readable(name)
+			else
+				local okT, kind = pcall(o.GetObjectType, o)
+				owner = L.NAMES_UNNAMED .. " " .. ((okT and Readable(kind)) or "?")
+			end
+		elseif ok then
+			owner = o and L.DEBUG_SECRET or "nil"
+		end
+		local okS, s = pcall(tip.IsShown, tip)
+		if okS then shown = Readable(s) end
+		local okC, c = pcall(tip.NumLines, tip)
+		if okC and type(c) == "number" and not IsSecret(c) then count = c end
+	end
+	ns.Print(L.DEBUG_OWNER, owner, shown, tostring(count))
+	if type(count) == "number" then
+		for i = 1, math.min(count, 30) do
+			local fs = _G["GameTooltipTextLeft" .. i]
+			local text = "nil"
+			if fs then
+				local ok, t = pcall(fs.GetText, fs)
+				text = ok and Readable(t) or L.DEBUG_UNREADABLE
+			end
+			ns.Print(L.DEBUG_LINE, i, text)
+		end
+	end
+	local shape, whose = L.DEBUG_SHAPE_NONE, "-"
+	if GetMinimapShape then
+		local ok, s = pcall(GetMinimapShape)
+		shape = ok and Readable(s) or L.DEBUG_UNREADABLE
+		whose = (GetMinimapShape == ns.ShapeFn) and L.DEBUG_SHAPE_OURS or L.DEBUG_SHAPE_OTHER
+	end
+	ns.Print(L.DEBUG_SHAPE, shape, whose)
+	local p = ns.OreLabels and ns.OreLabels.paths or {}
+	local saved = MiniMapForeverDB and MiniMapForeverDB.oreLabels
+	ns.Print(L.DEBUG_ORE, tostring(saved), tostring(p.mouseover), tostring(p.dataPostCall),
+		tostring(p.onShow), tostring(p.onUpdate))
+end
+
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
-	msg = strtrim(msg or ""):lower()
+	msg = (strtrim(msg or ""):lower():gsub("%s+", " "))
 	if msg == "names" then
 		PrintNames()
 	elseif msg == "pos" then
 		PrintPos()
+	elseif msg == "debug" then
+		local ok = pcall(PrintDebug)
+		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
 	elseif msg == "ore" and ns.db then
-		ns.OreLabels:Toggle()
+		ns.OreLabels:Status()
+	elseif msg == "ore on" and ns.db then
+		ns.OreLabels:Set(true)
+	elseif msg == "ore off" and ns.db then
+		ns.OreLabels:Set(false)
 	elseif msg == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -264,5 +345,6 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)
+		ns.Print(L.HELP_6)
 	end
 end

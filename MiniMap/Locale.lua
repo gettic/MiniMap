@@ -34,9 +34,22 @@ L.SHAPE_CONFLICT = "%s also changes the minimap, so Mini Map leaves the minimap'
 L.BAR_CONFLICT = "%s also collects minimap buttons, so Mini Map's button bar is off."
 L.OTHER_ADDON = "another addon"
 
-L.HELP_5 = "/mmap ore - on/off: ore icon and short name, in your Mining skill's colour, on mining nodes' minimap tooltips."
+L.HELP_5 = "/mmap ore on | off - ore icon and short name, in your Mining skill's colour, on mining nodes' minimap tooltips. /mmap ore shows if it's on."
 L.ORE_ON = "Ore labels on: hold the mouse over a mining node on the minimap."
 L.ORE_OFF = "Ore labels off."
+L.ORE_STATUS_ON = "Ore labels are on. Type /mmap ore off to turn them off."
+L.ORE_STATUS_OFF = "Ore labels are off. Type /mmap ore on to turn them on."
+
+L.HELP_6 = "/mmap debug - hold the mouse over the minimap and type this: prints tooltip and setting details for bug reports."
+L.DEBUG_OWNER = "Tooltip owner: %s, shown: %s, lines: %s"
+L.DEBUG_LINE = "  line %d: %s"
+L.DEBUG_SECRET = "(hidden by the game)"
+L.DEBUG_UNREADABLE = "(can't be read)"
+L.DEBUG_SHAPE = "Minimap shape: %s (%s)"
+L.DEBUG_SHAPE_OURS = "Mini Map's"
+L.DEBUG_SHAPE_OTHER = "another addon's or the game's"
+L.DEBUG_SHAPE_NONE = "not set"
+L.DEBUG_ORE = "Ore labels saved: %s; hooks: mouseover %s, tooltip data %s, OnShow %s, OnUpdate %s"
 L.ORE_MISSING = "Ore labels can't work on this game version (no minimap tooltip hook)."
 L.ORE_MINING = "Mining" -- skill name, only used on clients with the old skills list
 

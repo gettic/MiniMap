@@ -473,9 +473,5 @@ function Square:Setup()
 	ns.RunOutOfCombat("edit-fit", function()
 		ns.SafeRun("EditModeBox", Square.FitSelection, Square)
 	end)
-	-- Tell other addons (LibDBIcon, HereBeDragons...) the map is square. Core only gets
-	-- here when no other addon has defined it.
-	if not GetMinimapShape then
-		function GetMinimapShape() return "SQUARE" end
-	end
+	-- GetMinimapShape ("SQUARE") is set by Core.lua when it loads.
 end

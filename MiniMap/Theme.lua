@@ -69,7 +69,7 @@ local Theme = {
 
 	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
 	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",
-	dielSize = 32,
+	dielSize = 38,
 	dielInset = 4,
 
 	-- Frame strata for the whole map (map, border, header, bar, buttons, corner pieces), so

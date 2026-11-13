@@ -293,13 +293,11 @@ function Square:PlaceZoom()
 	local zin, zout, hit = Minimap.ZoomIn, Minimap.ZoomOut, Minimap.ZoomHitArea
 	if Usable(zin) then
 		zin:ClearAllPoints()
-		zin:SetPoint(point, Minimap, point, sx * z.inset, sy * z.inset)
+		zin:SetPoint(point, Minimap, point, sx * z.inX, sy * z.inY)
 	end
 	if Usable(zout) then
-		-- ZoomIn is 17x17: its centre is inset + 8.5 in; ZoomOut sits `step` further in.
-		local c = z.inset + 8.5 + z.step
 		zout:ClearAllPoints()
-		zout:SetPoint("CENTER", Minimap, point, sx * c, sy * c)
+		zout:SetPoint("CENTER", Minimap, point, sx * z.outX, sy * z.outY)
 	end
 	if Usable(hit) then
 		hit:ClearAllPoints()

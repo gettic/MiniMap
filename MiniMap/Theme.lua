@@ -118,9 +118,11 @@ local Theme = {
 	compartmentPoint = "BOTTOMRIGHT",
 	compartmentRaise = 0,
 	-- Blizzard's zoom buttons + their 40 px hover box, moved into this corner (map px):
-	-- ZoomIn's outer corner `inset` px in, ZoomOut `step` px further in on both axes (Blizzard's
-	-- own spacing), hover box centred `hitCenter` px in.
-	zoom = { point = "TOPRIGHT", inset = 4, step = 16, hitCenter = 22 },
+	-- inX/inY: ZoomIn's (+) outer corner, outX/outY: ZoomOut's (-) centre, hitCenter: the hover
+	-- box's centre, all map px in from the corner's sides. Same spacing as Blizzard's own
+	-- bottom-right placement (+ centre 11/31, - centre 27/15 from the right/bottom), turned
+	-- for the top: + upper-left (centre 27/15), - lower-right (centre 11/31).
+	zoom = { point = "TOPRIGHT", inX = 18.5, inY = 6.5, outX = 11, outY = 31, hitCenter = 22 },
 
 	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
 	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",

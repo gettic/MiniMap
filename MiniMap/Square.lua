@@ -189,7 +189,8 @@ local function MirrorShown(f)
 end
 
 -- Call before moving f. ownScale: we rescale f ourselves, so keep Blizzard's scale.
-local function StandIn(f, ownScale)
+-- w, h: Blizzard's own size when we resize f ourselves (the zone button), else f's size.
+local function StandIn(f, ownScale, w, h)
 	if not Square.copying then return end
 	if not (Usable(f) and MinimapCluster and f:GetParent() == MinimapCluster) then return end
 	local s = standIns[f]
@@ -211,7 +212,7 @@ local function StandIn(f, ownScale)
 		if ownScale then s:SetScale(f:GetScale()) end
 	end
 	if not ownScale then s:SetScale(f:GetScale()) end
-	s:SetSize(f:GetSize())
+	if w and h then s:SetSize(w, h) else s:SetSize(f:GetSize()) end
 	s:SetShown(f:IsShown())
 end
 
@@ -225,8 +226,81 @@ function Square:CreateHeader()
 	self.header = h
 end
 
+-- Blizzard's own zone button size and zone text width, read once (the first PlaceHeader runs
+-- before we ever widen it). The stand-in keeps this size, so the cluster's layout never changes.
+local zoneBase
+local function ZoneBase(zone)
+	if not zoneBase then
+		local text = MinimapZoneText
+		local tw = text and text.GetWidth and text:GetWidth()
+		local w, h = zone:GetSize()
+		zoneBase = { w = w, h = h, textW = (tw and tw > 0) and tw or nil }
+	end
+	return zoneBase
+end
+
+-- Our zone/clock plate: T.zonePlate's atlas cut in 3 (left end, stretched middle, right end)
+-- on our own frame behind Blizzard's zone button, SetAllPoints on it. Made once; false when
+-- the atlas can't be used (then the zone button keeps Blizzard's plate and width).
+function Square:MakeZonePlate(zone, height)
+	if self.zonePlate ~= nil then return self.zonePlate end
+	local P = T.zonePlate
+	local si = P and P.on and T.SliceInfo({ atlas = P.atlas, share = P.share })
+	if not (si and self.header) then
+		self.zonePlate = false
+		return false
+	end
+	local f = CreateFrame("Frame", "MiniMapForeverZonePlate", self.header)
+	f:EnableMouse(false)
+	f:SetAllPoints(zone)
+	local du = si.R - si.L
+	local a, b = si.m[1] / si.w, 1 - si.m[3] / si.w -- end shares of the atlas width
+	local k = height / si.h -- atlas units -> own units, keeps the ends' shape
+	local function Piece(u1, u2)
+		local t = f:CreateTexture(nil, "BACKGROUND")
+		t:SetTexture(si.file)
+		t:SetTexCoord(si.L + du * u1, si.L + du * u2, si.T, si.B)
+		return t
+	end
+	local left, mid, right = Piece(0, a), Piece(a, b), Piece(b, 1)
+	left:SetPoint("TOPLEFT")
+	left:SetPoint("BOTTOMLEFT")
+	left:SetWidth(math.max(1, si.m[1] * k))
+	right:SetPoint("TOPRIGHT")
+	right:SetPoint("BOTTOMRIGHT")
+	right:SetWidth(math.max(1, si.m[3] * k))
+	mid:SetPoint("TOPLEFT", left, "TOPRIGHT")
+	mid:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT")
+	self.zonePlate = f
+	return f
+end
+
+-- Zone button as wide as the strip allows (between tracking and calendar), never narrower
+-- than Blizzard's; zone text grows by the same amount. Blizzard's own plate texture is made
+-- invisible (ours is drawn instead), its hover glow covers the whole button. Only
+-- SetWidth / ClearAllPoints / SetAllPoints / SetAlpha, out of combat (square-pieces job).
+function Square:WidenZone(zone, h, base)
+	local P = T.zonePlate
+	local plate = self:MakeZonePlate(zone, base.h)
+	if not plate then return end
+	local w = math.max(base.w, math.floor(h:GetWidth() - 2 * P.sidePad - P.reserveL - P.reserveR))
+	-- Over the strip's background, under the zone button's text and the clock.
+	local hl, zl = h:GetFrameLevel(), zone:GetFrameLevel()
+	plate:SetFrameLevel(math.max(hl, math.min(hl + 1, zl - 1)))
+	if zone.StateTexture and zone.StateTexture.SetAlpha then zone.StateTexture:SetAlpha(0) end
+	local add = zone.AddTexture
+	if add and add.ClearAllPoints then
+		add:ClearAllPoints()
+		add:SetAllPoints(zone)
+	end
+	zone:SetWidth(w)
+	local text = MinimapZoneText
+	if text and text.SetWidth and base.textW then text:SetWidth(base.textW + (w - base.w)) end
+	self.zoneWidth = w
+end
+
 -- The strip goes on the side away from the icon bar, 2 px from the border; Blizzard's zone
--- button (with tracking and clock anchored to it) is centred in it.
+-- button (with tracking and clock anchored to it) is centred in it, then widened (WidenZone).
 function Square:PlaceHeader(under)
 	local zone = MinimapCluster and MinimapCluster.ZoneTextButton
 	local h, b = self.header, self.border
@@ -243,7 +317,8 @@ function Square:PlaceHeader(under)
 	h:SetFrameLevel(math.max(0, MinimapCluster:GetFrameLevel()))
 	local gap = T.StripGap(T.headerPad, b, under and "BOTTOM" or "TOP", h, under and "TOP" or "BOTTOM", s) / s -- map px -> strip units
 	local textY = T.headerTextY + (height - T.headerHeight) / 2 -- taller strip: zone stays centred
-	StandIn(zone)
+	local base = ZoneBase(zone)
+	StandIn(zone, nil, base.w, base.h)
 	h:ClearAllPoints()
 	zone:ClearAllPoints()
 	if under then
@@ -254,6 +329,7 @@ function Square:PlaceHeader(under)
 		zone:SetPoint("BOTTOM", h, "BOTTOM", T.headerOffsetX, textY)
 	end
 	h:Show()
+	self:WidenZone(zone, h, base)
 end
 
 -- Mail (IndicatorFrame) top-left inside the map (bottom-left with Header Underneath: the

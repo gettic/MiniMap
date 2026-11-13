@@ -19,7 +19,7 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 | Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border around it. It stays square with "Rotate Minimap" on. |
 | No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
 | Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
-| Header | The zone name, clock, calendar and tracking buttons sit in their own framed strip just above the map. |
+| Header | The zone name, clock, calendar and tracking buttons sit in their own framed strip just above the map. The zone and clock plate stretches to fill the strip between the tracking and calendar buttons, so long zone names fit. The clock sits at its right end. |
 | Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment (the addon counter) in the bottom-right corner. The + / - zoom buttons show in the top-right corner when you hover the map: + upper-left, - lower-right, spaced like Blizzard's bottom-right layout. |
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. A small see-through dark box behind them makes them easier to read. |
@@ -63,7 +63,7 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
 | `/mmap bookson` / `/mmap booksoff` | Turns the Library Books pin fix on or off (see [Library Books](#library-books)). |
 | `/mmap zygoron` / `/mmap zygoroff` | Turns the Zygor solid-line fix on or off (see [Zygor](#zygor)). |
-| `/mmap art` | Lists which border art this game has and says the action bar art is switched off. Include it in a bug report about the border. |
+| `/mmap art` | Lists which border and header button art this game has and says the action bar art is switched off. Include it in a bug report about the border. |
 | `/mmap mouse` | Live mouse check for 30 seconds (type it again to stop). Move the mouse onto the minimap and off again. Each time what is under the mouse changes, it prints what that is, whether the minimap sees the mouse, and where the mouse and the minimap are. Include it in a bug report about clicks or tooltips. |
 | `/mmap debug` | Hold the mouse over the spot where a minimap tooltip is missing and type it. Prints the tooltip's lines, the map's shape, the frames under the mouse, the minimap's click and hover state, whether the minimap's tooltip is running, a "Map position" line (position, size and scale), a "Border art" line, and a "Mouse fixes by Mini Map" line. Include it in a bug report about tooltips, pings or the map's shape. |
 

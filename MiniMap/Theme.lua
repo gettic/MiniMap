@@ -30,7 +30,7 @@ local Theme = {
 			{ atlas = "UI-HUD-ActionBar-IconFrame", share = 0.3, shadow = { 1, 1, 1, 1 } },
 		},
 		-- Extra atlases `/mmap art` reports (read only, never drawn from this list).
-		reportAtlases = { "ui-hud-actionbar-iconframe-slot", "!ui-hud-actionbar-frame-divider-threeslice-center" },
+		reportAtlases = { "ui-hud-actionbar-iconframe-slot", "!ui-hud-actionbar-frame-divider-threeslice-center", "ui-hud-minimap-header-button" },
 		scale = 0.5,                -- map border: margins drawn at this size (the file is 2x)
 		stripScale = 0.35,            -- header strip and icon bar (only 31-40 px tall)
 		overlap = 2,                  -- map px the inner edge of the frame reaches over the map
@@ -110,6 +110,18 @@ local Theme = {
 	headerMinWidth = 196, -- the header pieces need about 188 px
 	headerOffsetX = -1,   -- centres tracking + zone text + clock in the strip
 	headerTextY = 2,      -- zone button (23 px) inside the 27 px strip
+	-- Zone/clock plate: Blizzard's zone button (zone text left, clock right) widened to fill the
+	-- strip between tracking and calendar, never narrower than Blizzard's own width. Its art is
+	-- redrawn by us from the same atlas, cut in 3 (left end, stretched middle, right end), so the
+	-- round ends keep their shape. Atlas missing or `on` false: Blizzard's plate, not widened.
+	zonePlate = {
+		on = true,
+		atlas = "ui-hud-minimap-header-button",
+		share = 0.1,   -- end width (part of the atlas width) when the atlas has no sliceData
+		sidePad = 4,   -- strip units between the strip's inner edge and tracking / calendar
+		reserveL = 17, -- tracking, left of the zone button
+		reserveR = 19, -- calendar, right of it (23 wide, 4 overlap)
+	},
 
 	-- Mail and addon compartment: in the map's corners, this far in (map pixels).
 	cornerInset = 5,

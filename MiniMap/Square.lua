@@ -197,6 +197,7 @@ function Square:FitSelection()
 	if not (uL and cl) then
 		-- Nothing of ours shows: Blizzard's own box and clamp.
 		self.fit = nil
+		if ns.db then ns.db.editFit = nil end
 		sel:ClearAllPoints()
 		sel:SetAllPoints(c)
 		if c.SetClampRectInsets then c:SetClampRectInsets(0, 0, 0, 0) end
@@ -211,18 +212,18 @@ function Square:FitSelection()
 		sel = { (uL - cl) / ss, (uR - cr) / ss, (uT - ct) / ss, (uB - cb) / ss },
 		clamp = { (uL - cl) / cs, (uR - cr) / cs, (uT - ct) / cs, (uB - cb) / cs },
 	}
+	-- Saved for the next load (ApplySaved), so Edit Mode's first layout pass uses them.
+	if ns.db then
+		ns.db.editFit = { sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
+	end
 	self:ApplyClamp()
 end
 
--- Our last box and clamp, right now (no rect reads). Runs straight after Blizzard re-anchors
--- the cluster or its box, so the screen clamp never works with Blizzard's full-size insets
--- (that pushed the map left once at every load).
-function Square:ApplyClamp()
-	local fit = self.fit
-	if not (self.active and fit) or InCombatLockdown() then return end
+-- Puts a box + clamp set on the cluster (no rect reads, out of combat).
+local function PutFit(fit)
 	local c = MinimapCluster
 	local sel = c and c.Selection
-	if not (Usable(c) and Usable(sel) and sel.SetPoint) then return end
+	if not (fit and Usable(c) and Usable(sel) and sel.SetPoint) or InCombatLockdown() then return end
 	local p = fit.sel
 	sel:ClearAllPoints()
 	sel:SetPoint("TOPLEFT", c, "TOPLEFT", p[1], p[3])
@@ -230,6 +231,42 @@ function Square:ApplyClamp()
 	if c.SetClampRectInsets then
 		c:SetClampRectInsets(fit.clamp[1], fit.clamp[2], fit.clamp[3], fit.clamp[4])
 	end
+end
+
+-- Our last box and clamp, right now. Runs straight after Blizzard re-anchors the cluster or its box.
+function Square:ApplyClamp()
+	if self.active then PutFit(self.fit) end
+end
+
+local function ValidSide(t)
+	if type(t) ~= "table" then return false end
+	for i = 1, 4 do
+		local v = t[i]
+		if type(v) ~= "number" or v ~= v or math.abs(v) > 500 then return false end
+	end
+	return true
+end
+
+-- At our ADDON_LOADED: last session's box + clamp, so Edit Mode's own layout pass (after
+-- addons load) works out the clamp with our insets and the map stays in its corner.
+-- The cluster's anchor is never touched.
+function Square:ApplySaved()
+	local s = ns.db and ns.db.editFit
+	if not (type(s) == "table" and ValidSide(s.sel) and ValidSide(s.clamp)) then return end
+	self.early = true
+	PutFit(s)
+end
+
+-- A shape addon stopped us after ApplySaved: back to Blizzard's box and clamp.
+function Square:UndoSaved()
+	if not self.early or self.active or InCombatLockdown() then return end
+	self.early = nil
+	local c = MinimapCluster
+	local sel = c and c.Selection
+	if not (Usable(c) and Usable(sel)) then return end
+	sel:ClearAllPoints()
+	sel:SetAllPoints(c)
+	if c.SetClampRectInsets then c:SetClampRectInsets(0, 0, 0, 0) end
 end
 
 -- Next frame (anchors settled), once however often asked, after combat if needed.

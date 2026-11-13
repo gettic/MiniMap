@@ -112,6 +112,7 @@ local function Setup()
 
 	if ns.shapeConflict then
 		ns.Print(L.SHAPE_CONFLICT, ns.shapeConflict)
+		ns.SafeRun("EditModeBox", ns.Square.UndoSaved, ns.Square)
 	else
 		ns.SafeRun("Square", ns.Square.Setup, ns.Square)
 	end
@@ -133,6 +134,7 @@ events:SetScript("OnEvent", function(_, event, arg1)
 	if event == "ADDON_LOADED" then
 		if arg1 == ADDON then
 			InitDB()
+			ns.SafeRun("EditModeBox", ns.Square.ApplySaved, ns.Square)
 		elseif ns.setupDone then
 			if arg1 == "Blizzard_HybridMinimap" and ns.Square.active then
 				ns.SafeRun("Square", ns.Square.ApplyMask, ns.Square)

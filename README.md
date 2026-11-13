@@ -24,7 +24,7 @@ Version 0.2.0. Please report anything that looks wrong on the [Issues](https://g
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. A small see-through dark box behind them makes them easier to read. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it, and Edit Mode's box fits the map, header and bar. |
-| Mouse guard | Mini Map makes sure the minimap itself takes the mouse, and turns off the mouse on any big invisible frame lying over it (from Mini Map, the game or another addon), so clicks (pings) and tooltips reach the map. It doesn't run in combat or in Edit Mode. |
+| Mouse guard | Mini Map makes sure the minimap itself takes the mouse, puts back its click area if something shrank it, and turns off the mouse on any big invisible frame lying over it (from Mini Map, the game or another addon), so clicks (pings) and tooltips reach the map. It doesn't run in combat or in Edit Mode. |
 | Layer | The map, its border, the header strip, the bar and the buttons sit in the background layer, so other addons' windows always draw over them. |
 
 The bar hides itself when it has no buttons. Blizzard's event button also goes into the bar while an event is on.
@@ -64,7 +64,8 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | `/mmap bookson` / `/mmap booksoff` | Turns the Library Books pin fix on or off (see [Library Books](#library-books)). |
 | `/mmap zygoron` / `/mmap zygoroff` | Turns the Zygor solid-line fix on or off (see [Zygor](#zygor)). |
 | `/mmap art` | Lists which border art this game has and says the action bar art is switched off. Include it in a bug report about the border. |
-| `/mmap debug` | Hold the mouse over the spot where a minimap tooltip is missing and type it. Prints the tooltip's lines, the map's shape, the frames under the mouse, the minimap's click and hover state, whether the minimap's tooltip is running, a "Border art" line, and a "Mouse fixes by Mini Map" line. Include it in a bug report about tooltips, pings or the map's shape. |
+| `/mmap mouse` | Live mouse check for 30 seconds (type it again to stop). Move the mouse onto the minimap and off again. Each time what is under the mouse changes, it prints what that is, whether the minimap sees the mouse, and where the mouse and the minimap are. Include it in a bug report about clicks or tooltips. |
+| `/mmap debug` | Hold the mouse over the spot where a minimap tooltip is missing and type it. Prints the tooltip's lines, the map's shape, the frames under the mouse, the minimap's click and hover state, whether the minimap's tooltip is running, a "Map position" line (position, size and scale), a "Border art" line, and a "Mouse fixes by Mini Map" line. Include it in a bug report about tooltips, pings or the map's shape. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 

@@ -563,7 +563,7 @@ end
 ---------------------------------------------------------------------------
 -- Mouse guard: Blizzard's minimap pings (click) and blip tooltips (hover) only work while the
 -- Minimap itself is the first frame taking the mouse under the cursor. Out of combat:
--- 1. the Minimap's own mouse (and click / motion) is on;
+-- 1. the Minimap's own mouse (and click / motion) is on, and no hit rect insets shrink it;
 -- 2. no frame it sits in (MinimapContainer, MinimapCluster) is at its level or above;
 -- 3. any other shown, mouse-taking frame near the map (children of the cluster, container,
 --    MinimapBackdrop and the Minimap, plus those three) that covers half the map or more gets
@@ -635,6 +635,14 @@ function Square:GuardMouse()
 	if m.SetMouseMotionEnabled and m.IsMouseMotionEnabled and not m:IsMouseMotionEnabled() then
 		m:SetMouseMotionEnabled(true)
 		fixes["Minimap hover on"] = true
+	end
+	-- Hit area shrunk by insets (Blizzard sets none on the Minimap): back to the whole map.
+	if m.GetHitRectInsets and m.SetHitRectInsets then
+		local l, r, t, b = m:GetHitRectInsets()
+		if (l or 0) > 0 or (r or 0) > 0 or (t or 0) > 0 or (b or 0) > 0 then
+			m:SetHitRectInsets(0, 0, 0, 0)
+			fixes["Minimap hit area reset"] = true
+		end
 	end
 	local ml, mr, mt, mb = Rect(m)
 	if not (ml and mr > ml and mt > mb) then return end

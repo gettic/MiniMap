@@ -301,6 +301,24 @@ local function NameOf(f)
 	return L.NAMES_UNNAMED .. " " .. Ask(f, "GetObjectType")
 end
 
+-- Cursor and Minimap geometry in UI units (UIParent), one text line: cursor x,y; Minimap
+-- left,bottom,width,height; its effective scale; hit rect insets; shown/visible.
+local function MapGeometry()
+	local m = Minimap
+	if not (m and UIParent) then return end
+	local ui = UIParent:GetEffectiveScale() or 1
+	local cx, cy = GetCursorPosition()
+	cx, cy = (cx or 0) / ui, (cy or 0) / ui
+	local es = m:GetEffectiveScale() or 1
+	local l, b, w, h = m:GetRect()
+	local k = es / ui
+	local rect = l and string.format("%.0f,%.0f %.0fx%.0f", l * k, b * k, w * k, h * k) or "none"
+	local hl, hr, ht, hb = 0, 0, 0, 0
+	if m.GetHitRectInsets then hl, hr, ht, hb = m:GetHitRectInsets() end
+	return string.format(L.GEO_FMT, cx, cy, rect, es, hl or 0, hr or 0, ht or 0, hb or 0,
+		tostring(m:IsShown()), tostring(m:IsVisible()))
+end
+
 -- The frames under the mouse (what takes the mouse there) and the Minimap's own state: if the
 -- Minimap isn't first, that frame stops Blizzard's minimap tooltips at this spot.
 local function PrintMouse()
@@ -330,10 +348,71 @@ local function PrintMouse()
 			Ask(m, "IsMouseClickEnabled"), Ask(m, "IsMouseMotionEnabled"),
 			Ask(m, "IsMouseOver"), okS and tostring(script ~= nil) or "?")
 	end
+	local okG, geo = pcall(MapGeometry)
+	if okG and geo then ns.Print(L.DEBUG_GEO, geo) end
 	local names = {}
 	for k in pairs(ns.Square and ns.Square.mouseFixes or {}) do names[#names + 1] = k end
 	table.sort(names)
 	ns.Print(L.DEBUG_FIXES, #names > 0 and table.concat(names, "; ") or L.DEBUG_FIXES_NONE)
+end
+
+---------------------------------------------------------------------------
+-- `/mmap mouse`: live check (toggle). Every 0.5 s prints, only when it changes, the frame under
+-- the cursor and whether the Minimap sees the cursor, with the cursor and the Minimap's rect
+-- in UI units. Off by itself after 30 s. Read-only, all in pcall.
+---------------------------------------------------------------------------
+local mouseWatch, watchLeft, watchWait, watchLast
+
+local function FocusName()
+	local foci
+	if GetMouseFoci then
+		local ok, t = pcall(GetMouseFoci)
+		foci = ok and type(t) == "table" and t or {}
+	else
+		foci = { GetMouseFocus and GetMouseFocus() }
+	end
+	for i = 1, #foci do
+		local f = foci[i]
+		if f and f ~= WorldFrame then
+			if f.IsForbidden and f:IsForbidden() then return "(forbidden)" end
+			return NameOf(f)
+		end
+	end
+	return L.MOUSE_WORLD
+end
+
+local function WatchTick(_, elapsed)
+	watchLeft = watchLeft - elapsed
+	if watchLeft <= 0 then
+		mouseWatch:SetScript("OnUpdate", nil)
+		mouseWatch.on = false
+		ns.Print(L.MOUSE_OFF)
+		return
+	end
+	watchWait = watchWait - elapsed
+	if watchWait > 0 then return end
+	watchWait = 0.5
+	local ok, focus, over = pcall(function() return FocusName(), Ask(Minimap, "IsMouseOver") end)
+	if not ok then return end
+	local key = focus .. "|" .. over
+	if key == watchLast then return end
+	watchLast = key
+	local okG, geo = pcall(MapGeometry)
+	ns.Print(L.MOUSE_LINE, focus, over, okG and geo or "?")
+end
+
+local function ToggleMouseWatch()
+	if not mouseWatch then mouseWatch = CreateFrame("Frame") end
+	if mouseWatch.on then
+		mouseWatch:SetScript("OnUpdate", nil)
+		mouseWatch.on = false
+		ns.Print(L.MOUSE_OFF)
+		return
+	end
+	mouseWatch.on = true
+	watchLeft, watchWait, watchLast = 30, 0, nil
+	ns.Print(L.MOUSE_ON)
+	mouseWatch:SetScript("OnUpdate", WatchTick)
 end
 
 local function PrintDebug()
@@ -422,6 +501,8 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		end
 	elseif cmd == "bookson" then
 		ns.Books:SetOn(true)
+	elseif cmd == "mouse" then
+		ToggleMouseWatch()
 	elseif cmd == "booksoff" then
 		ns.Books:SetOn(false)
 	elseif cmd == "zygoron" then
@@ -435,6 +516,7 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)
 		ns.Print(L.HELP_ART)
+		ns.Print(L.HELP_MOUSE)
 		ns.Print(L.HELP_6)
 		if ns.Zygor.IsZygorLoaded() then ns.Print(L.HELP_7) end
 	end

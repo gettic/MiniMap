@@ -3,9 +3,7 @@ local ADDON, ns = ...
 local L = ns.L
 
 local DEFAULTS = {
-	dbVersion = 1,
-	oreLabels = false, -- ore pins on the minimap at nodes the player mined (/mmap ore)
-	-- orePins (table, [mapID] = { { x, y, itemID }, ... }) is made in InitDB, never reset.
+	dbVersion = 2,
 }
 
 -- Addons that change the minimap's shape or move it (folder names; best guesses, keep up to date).
@@ -90,15 +88,22 @@ local function FlushQueue()
 end
 
 ---------------------------------------------------------------------------
--- Saved settings (account-wide). Fill missing keys only; never drop unknown ones.
+-- Saved settings (account-wide). Fill missing keys only; never drop unknown ones, except the
+-- one-time clean-up below.
 ---------------------------------------------------------------------------
 local function InitDB()
 	if type(MiniMapForeverDB) ~= "table" then MiniMapForeverDB = {} end
-	for k, v in pairs(DEFAULTS) do
-		if MiniMapForeverDB[k] == nil then MiniMapForeverDB[k] = v end
+	local db = MiniMapForeverDB
+	-- Version 2: the ore pins (v0.1.1-beta.3 to beta.7) were removed; their setting and saved
+	-- node spots are cleared once.
+	if db.dbVersion ~= nil and (tonumber(db.dbVersion) or 1) < 2 then
+		db.oreLabels, db.orePins = nil, nil
+		db.dbVersion = 2
 	end
-	if type(MiniMapForeverDB.orePins) ~= "table" then MiniMapForeverDB.orePins = {} end
-	ns.db = MiniMapForeverDB
+	for k, v in pairs(DEFAULTS) do
+		if db[k] == nil then db[k] = v end
+	end
+	ns.db = db
 end
 
 ---------------------------------------------------------------------------
@@ -139,8 +144,6 @@ local function Setup()
 	else
 		ns.SafeRun("IconBar", ns.IconBar.Setup, ns.IconBar)
 	end
-
-	ns.SafeRun("OrePins", ns.OrePins.Setup, ns.OrePins)
 end
 
 local events = CreateFrame("Frame")
@@ -258,8 +261,8 @@ local function PrintPos()
 	end
 end
 
--- `/mmap debug`: tooltip owner and raw lines (| shown as ||), the minimap shape, the ore pin
--- setting and counts, and the last mined node. Read-only; every read in pcall, secret values skipped.
+-- `/mmap debug`: tooltip owner and raw lines (| shown as ||) and the minimap shape.
+-- Read-only; every read in pcall, secret values skipped.
 local function IsSecret(v)
 	if not issecretvalue then return false end
 	local ok, secret = pcall(issecretvalue, v)
@@ -312,63 +315,19 @@ local function PrintDebug()
 		whose = (GetMinimapShape == ns.ShapeFn) and L.DEBUG_SHAPE_OURS or L.DEBUG_SHAPE_OTHER
 	end
 	ns.Print(L.DEBUG_SHAPE, shape, whose)
-	local P = ns.OrePins
-	local saved = MiniMapForeverDB and MiniMapForeverDB.oreLabels
-	local mapID
-	if C_Map and C_Map.GetBestMapForUnit then
-		local ok, m = pcall(C_Map.GetBestMapForUnit, "player")
-		if ok and type(m) == "number" and not IsSecret(m) then mapID = m end
-	end
-	ns.Print(L.DEBUG_ORE, tostring(saved), P.Count(mapID), tostring(mapID or "-"), (P.CountAll()),
-		P.ShownCount(), tostring(P.TickerRunning()))
-	ns.Print(L.DEBUG_LEARN, P.lastLearn or L.DEBUG_LEARN_NONE)
-	ns.Print(L.DEBUG_EVENTS, P.DebugEvents())
 end
-
--- `/mmap ore` words. WoW Forever's chat box seems to run a slash command when space is pressed
--- after its second word, so `/mmap ore on` arrives as "ore"; the one-word forms (`oreon`) always
--- arrive whole. Two-word and `ore-on` / `ore:on` / `ore=on` forms are accepted too.
-local ORE_ARGS = {
-	on = "on", ["1"] = "on", ["true"] = "on", show = "on", yes = "on",
-	off = "off", ["0"] = "off", ["false"] = "off", hide = "off", no = "off",
-	clear = "clear", clearall = "clearall",
-}
 
 -- Returns the command word and up to two argument words (lower case, "" when missing).
 local function ParseSlash(msg)
 	msg = (strtrim(tostring(msg or "")):lower():gsub("[%-_:=]", " "):gsub("%s+", " "))
 	local cmd, arg, arg2 = msg:match("^(%S*)%s*(%S*)%s*(%S*)")
-	cmd, arg, arg2 = cmd or "", arg or "", arg2 or ""
-	if arg == "" then
-		local joined = cmd:match("^ore(%w+)$")
-		if joined then cmd, arg = "ore", joined end
-	end
-	if cmd == "ore" and arg == "clear" and arg2 == "all" then arg = "clearall" end
-	return cmd, arg, arg2, msg
+	return cmd or "", arg or "", arg2 or "", msg
 end
 ns.ParseSlash = ParseSlash
 
-local function OreCommand(arg, raw)
-	local P = ns.OrePins
-	local what = ORE_ARGS[arg]
-	if arg == "" then
-		P:Status()
-	elseif what == "on" then
-		P:Set(true)
-	elseif what == "off" then
-		P:Set(false)
-	elseif what == "clear" then
-		P:Clear(false)
-	elseif what == "clearall" then
-		P:Clear(true)
-	else
-		ns.Print(L.ORE_UNKNOWN, arg, raw)
-	end
-end
-
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
-	local cmd, arg, _, raw = ParseSlash(msg)
+	local cmd = ParseSlash(msg)
 	if cmd == "names" then
 		PrintNames()
 	elseif cmd == "pos" then
@@ -376,8 +335,6 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 	elseif cmd == "debug" then
 		local ok = pcall(PrintDebug)
 		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
-	elseif cmd == "ore" and ns.db then
-		OreCommand(arg, raw)
 	elseif cmd == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -391,6 +348,5 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)
-		ns.Print(L.HELP_6)
 	end
 end

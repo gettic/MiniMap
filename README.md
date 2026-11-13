@@ -23,7 +23,6 @@ Version 0.1.0. Please report anything that looks wrong on the [Issues](https://g
 | Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment in the top-right corner. |
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
 | Coordinates | If you show player coordinates, they sit inside the map's bottom edge, so they don't cover the bar. |
-| Ore pins | Optional, off by default. When you loot a mining node (autoloot works too), Mini Map remembers it and shows the ore's icon there on the minimap, with a short name (for example "Thorium") in a colour for your Mining skill: red (too low), orange, yellow, green, grey. Names show when 4 pins or fewer are on the map, otherwise when you hold the mouse over a pin. Turn it on with `/mmap oreon`. |
 | Edit Mode | You still move and size the minimap with Blizzard's Edit Mode. The border and the bar follow it, and Edit Mode's box fits the map, header and bar. |
 | Layer | The map, its border, the header strip, the bar and the buttons sit in the background layer, so other addons' windows always draw over them. |
 
@@ -40,7 +39,7 @@ The bar hides itself when it has no buttons. Blizzard's event button also goes i
 
 ## How to use it
 
-Mini Map works by itself as soon as you log in. There is one optional setting, ore pins (see the chat commands).
+Mini Map works by itself as soon as you log in. There are no settings.
 
 **Move or size the minimap:** open Edit Mode (**Esc > Edit Mode**) and click the minimap.
 
@@ -61,13 +60,7 @@ Mini Map works by itself as soon as you log in. There is one optional setting, o
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
 | `/mmap names` | Hold the mouse over a minimap button and type it to see the button's name, and its textures (size, art, crop, shown, alpha). If a button isn't picked up or looks wrong, tell us what it prints so we can fix it. |
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
-| `/mmap oreon` / `/mmap oreoff` | Turns ore pins on or off. Off by default. The choice is saved. |
-| `/mmap ore` | Shows whether ore pins are on or off, and how many pins you have. |
-| `/mmap oreclear` | Forgets the ore pins of the zone you are in. |
-| `/mmap oreclearall` | Forgets the ore pins of every zone. |
-
-The two-word forms (`/mmap ore on`, `/mmap ore clear all`) also work where the chat passes them whole. On WoW Forever, chat may run a command as soon as you press space, so use the one-word forms.
-| `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines, the map's shape, the ore pin setting, a "Last mined node" line (why the last loot was or wasn't saved) and a "Learn events" line (events listening, last loot, last cast). Include it in a bug report about ore pins or tooltips. |
+| `/mmap debug` | Hold the mouse over something on the minimap and type it. Prints the tooltip's lines and the map's shape. Include it in a bug report about tooltips or the map's shape. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 
@@ -83,7 +76,6 @@ Mini Map already looks for new buttons a few times after login and when another 
 - **One shift after updating.** The map stays in its screen corner after `/reload` and login, and turning Header Underneath on or off no longer moves it. On the first load after you update, it may shift once. If you had dragged the map back after an earlier jump, it may also sit about 27 px higher once. Move it back into place once and save Edit Mode.
 - **Gathering dots may be missing in the corners.** The game only shows its own gathering dots (ore, herbs) inside its round tracking range, so they may not show in the square map's corners.
 - **Some buttons may not be collected.** Mini Map picks up buttons by their name. A button with an unusual name stays where its addon put it. Use `/mmap names` over it and report what it prints on the [Issues](https://github.com/gettic/MiniMap/issues) page.
-- **Ore pins: only nodes you mined.** Mini Map doesn't scan for nodes and can't tell whether a node is up now. Nothing shows in dungeons or other instances, and the pins stay hidden while GatherMate2, Gatherer or GatherLite is loaded. Only the ores of Classic Mining are known, and the skill levels are Classic ones, so colours may be off for WoW Forever's own levels. The pins are display only: you can't click them.
 
 ## For people who change the code
 
@@ -97,9 +89,8 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Core.lua` | Start-up, saved settings, combat queue, other-addon check, `/mmap`. |
 | `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
 | `IconBar.lua` | Finding minimap buttons and laying out the bar. |
-| `OrePins.lua` | Ore pins on the minimap at nodes the player mined (`/mmap oreon`). |
 
-Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload, the ore pin switch (`oreLabels`) and the saved pins (`orePins`).
+Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload.
 
 ## Licence
 

@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-> **Beta.** Version 0.1.0-rc.3 is still being tested in the game. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+Version 0.1.0. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)
@@ -29,7 +29,7 @@ The bar hides itself when it has no buttons. Blizzard's event button also goes i
 
 ## Install
 
-**With an addon manager:** find **Mini Map** in its list and install it. While Mini Map is in beta, use the manager's beta channel.
+**With an addon manager:** find **Mini Map** in its list and install it.
 
 **By hand:**
 1. Download the zip from the [Releases](https://github.com/gettic/MiniMap/releases) page.

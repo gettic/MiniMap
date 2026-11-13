@@ -322,6 +322,7 @@ local function PrintDebug()
 	ns.Print(L.DEBUG_ORE, tostring(saved), P.Count(mapID), tostring(mapID or "-"), (P.CountAll()),
 		P.ShownCount(), tostring(P.TickerRunning()))
 	ns.Print(L.DEBUG_LEARN, P.lastLearn or L.DEBUG_LEARN_NONE)
+	ns.Print(L.DEBUG_EVENTS, P.DebugEvents())
 end
 
 -- `/mmap ore` words. WoW Forever's chat box seems to run a slash command when space is pressed

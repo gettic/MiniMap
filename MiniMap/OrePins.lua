@@ -1,7 +1,7 @@
 -- Mini Map: ore pins. After the player mines a node, Mini Map remembers where it was and shows
 -- the ore's own item icon there on the minimap, with a short name coloured by the player's
 -- Mining skill (orange/yellow/green/grey, like the trade skill window). Off unless
--- `ns.db.oreLabels`. Only nodes the player mined (own cast + own loot within a few seconds);
+-- `ns.db.oreLabels`. Only nodes the player mined (own loot window from a game object);
 -- no scanning, no node database, no sharing. Pins are display only (no clicks).
 -- Every game value is read in pcall and checked with `issecretvalue`; a secret or missing
 -- value means nothing is recorded or drawn.
@@ -13,7 +13,6 @@ ns.OrePins = Pins
 
 local MINING_SKILL_LINE = 186
 local SKILL_CACHE_SECONDS = 5
-local CAST_WINDOW = 5        -- seconds between the player's cast and the loot
 local SAME_NODE = 0.003      -- map units: closer than this = the same node
 local MAX_PER_MAP = 300      -- saved pins per map; the oldest go first
 local POOL_SIZE = 40         -- pin frames at most (made outside the ticker)
@@ -239,70 +238,103 @@ local function InInstance()
 end
 
 ---------------------------------------------------------------------------
--- Learning: the player's own cast, then loot from a game object (a node) within a few
--- seconds that holds an ore from ORES.
+-- Learning: the player's own loot window, from a game object (a node), holding an ore from
+-- ORES. No cast is needed (the player's last cast is only shown in /mmap debug). Every step
+-- leaves a reason in `Pins.lastLearn`, so /mmap debug shows where it stopped.
 ---------------------------------------------------------------------------
-local lastCast = -CAST_WINDOW - 1
-local looted = false -- one recording per loot window (LOOT_READY and LOOT_OPENED both fire)
+local lastCast = nil -- GetTime() of the player's last cast (info for /mmap debug)
+local lastLoot, lastLootTime = nil, nil -- last loot event name and time (info)
+local looted = nil -- GetTime() when this loot window was read (LOOT_READY and LOOT_OPENED both fire)
 Pins.lastLearn = nil -- text for /mmap debug
+Pins.listenCount = 0 -- learn/refresh events registered (for /mmap debug)
 
-local function Learned(fmt, ...)
-	Pins.lastLearn = (select("#", ...) > 0) and fmt:format(...) or fmt
+local function Learned(event, fmt, ...)
+	local text = (select("#", ...) > 0) and fmt:format(...) or fmt
+	Pins.lastLearn = ("%s: %s"):format(tostring(event or "?"), text)
 end
 
+-- Item ID in `slot`; nil for an empty slot or money, false when the link is hidden.
 local function ItemOfSlot(slot)
 	local ok, link = Try(GetLootSlotLink, slot)
-	link = ok and Str(link)
-	local id = link and tonumber(link:match("item:(%d+)"))
-	return id
+	if not ok then return false end
+	if link == nil then return nil end
+	link = Str(link)
+	if not link then return false end
+	return tonumber(link:match("item:(%d+)"))
 end
 
--- True if the loot in `slot` comes from a game object (vein, herb, chest...), not a creature.
--- nil when it can't be told (secret or missing).
-local function FromObject(slot)
+-- Kind of thing the loot in `slot` comes from: the GUID's type word ("GameObject" for a vein,
+-- "Creature", "Item"...). Never the GUID itself. nil when hidden or missing.
+local function SourceKind(slot)
 	local ok, guid = Try(GetLootSourceInfo, slot)
-	if not ok then return nil end
-	guid = Str(guid)
-	if not guid then return nil end
-	return guid:match("^GameObject%-") ~= nil
+	guid = ok and Str(guid)
+	return guid and guid:match("^(%a+)%-") or nil
 end
 
-function Pins.Learn()
-	if looted then return end
-	if Now() - lastCast > CAST_WINDOW then return end -- not right after the player's own cast
-	local okN, count = Try(GetNumLootItems)
-	count = okN and Num(count)
-	if not count or count == 0 then return end
-	looted = true
-	local best, bestNeed, sourceSeen
+local function CastInfo()
+	if not lastCast then return L.LEARN_NO_CAST end
+	return L.LEARN_CAST_AGO:format(Now() - lastCast)
+end
+
+function Pins.Learn(event)
+	if looted and Now() - looted < 2 then return end -- this loot window was already read
+	local okN, rawCount = Try(GetNumLootItems)
+	if not okN or not Plain(rawCount) then
+		return Learned(event, L.LEARN_SECRET, L.LEARN_WHAT_COUNT)
+	end
+	local count = Num(rawCount) or 0
+	if count == 0 then return Learned(event, L.LEARN_EMPTY) end -- LOOT_OPENED may still read it
+	local ids, best, bestNeed, otherKind, hiddenLink = {}, nil, nil, nil, false
 	for slot = 1, count do
 		local id = ItemOfSlot(slot)
-		local ore = id and ORES[id]
-		if ore then
-			local fromObject = FromObject(slot)
-			if fromObject == nil then
-				Learned(L.LEARN_SECRET, L.LEARN_WHAT_SOURCE)
-				return
-			end
-			sourceSeen = true
-			if fromObject and (not bestNeed or ore[2] > bestNeed) then
-				best, bestNeed = id, ore[2]
+		if id == false then
+			hiddenLink = true
+		elseif id then
+			ids[#ids + 1] = id
+			local ore = ORES[id]
+			if ore then
+				local kind = SourceKind(slot)
+				if not kind then
+					looted = Now()
+					return Learned(event, L.LEARN_SECRET, L.LEARN_WHAT_SOURCE)
+				end
+				if kind ~= "GameObject" then
+					otherKind = kind
+				elseif not bestNeed or ore[2] > bestNeed then
+					best, bestNeed = id, ore[2]
+				end
 			end
 		end
 	end
+	if #ids == 0 then -- nothing readable yet: LOOT_OPENED may still read it
+		return Learned(event, hiddenLink and L.LEARN_SECRET or L.LEARN_EMPTY, L.LEARN_WHAT_LINK)
+	end
+	looted = Now()
 	if not best then
-		if sourceSeen then Learned(L.LEARN_NOT_NODE) end
-		return
+		if otherKind then return Learned(event, L.LEARN_NOT_NODE, otherKind) end
+		local shown = {}
+		for i = 1, math.min(#ids, 8) do shown[i] = tostring(ids[i]) end
+		return Learned(event, L.LEARN_NO_ORE, table.concat(shown, ", "))
 	end
 	local mapID = PlayerMap()
 	local x, y = PlayerPos(mapID)
 	if not (mapID and x) then
-		Learned(L.LEARN_SECRET, L.LEARN_WHAT_POS)
-		return
+		return Learned(event, L.LEARN_NO_POS, tostring(mapID or "-"))
 	end
 	local result = Pins.Record(mapID, x, y, best)
-	Learned(result == "new" and L.LEARN_NEW or L.LEARN_SAME, ORES[best][1], mapID, x * 100, y * 100)
+	if not result then return Learned(event, L.LEARN_NO_SAVE) end
+	Learned(event, result == "new" and L.LEARN_NEW or L.LEARN_SAME, ORES[best][1], mapID,
+		x * 100, y * 100, CastInfo())
 	if On() then Pins:Refresh() end
+end
+
+-- `/mmap debug`: registered events, last loot event and last cast.
+function Pins.DebugEvents()
+	local function Ago(name, t)
+		if not t then return L.DEBUG_NEVER end
+		return L.DEBUG_AGO:format(name, Now() - t)
+	end
+	return Pins.listenCount, Pins.listenTotal or 0, Ago(lastLoot, lastLootTime), Ago(L.DEBUG_CAST, lastCast)
 end
 
 ---------------------------------------------------------------------------
@@ -511,14 +543,12 @@ local events = CreateFrame("Frame")
 
 local function OnEvent(_, event, unit)
 	if event == "UNIT_SPELLCAST_SENT" or event == "UNIT_SPELLCAST_SUCCEEDED" then
-		if unit == "player" then
-			lastCast = Now()
-			if event == "UNIT_SPELLCAST_SENT" then looted = false end -- new cast, new loot window
-		end
+		if Str(unit) == "player" then lastCast = Now() end -- info for /mmap debug only
 	elseif event == "LOOT_READY" or event == "LOOT_OPENED" then
-		Pins.Learn()
+		lastLoot, lastLootTime = event, Now()
+		Pins.Learn(event)
 	elseif event == "LOOT_CLOSED" then
-		looted = false
+		looted = nil
 	else -- zone changes, entering the world
 		Pins:Refresh()
 	end
@@ -530,18 +560,27 @@ local LISTEN = {
 	"ZONE_CHANGED", "ZONE_CHANGED_INDOORS", "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD",
 }
 
+Pins.listenTotal = #LISTEN
+
+-- Player-only unit event where it works, else a plain event (OnEvent checks the unit).
+local function Register(e)
+	if e:find("^UNIT_") and events.RegisterUnitEvent
+		and pcall(events.RegisterUnitEvent, events, e, "player") then
+		return true
+	end
+	return (pcall(events.RegisterEvent, events, e))
+end
+
 local function Listen(on)
+	local count = 0
 	for _, e in ipairs(LISTEN) do
 		if on then
-			if e:find("^UNIT_") and events.RegisterUnitEvent then
-				pcall(events.RegisterUnitEvent, events, e, "player")
-			else
-				pcall(events.RegisterEvent, events, e)
-			end
+			if Register(e) then count = count + 1 end
 		else
 			pcall(events.UnregisterEvent, events, e)
 		end
 	end
+	Pins.listenCount = count
 end
 
 events:SetScript("OnEvent", function(...)

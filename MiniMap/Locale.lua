@@ -45,8 +45,30 @@ L.DEBUG_SHAPE_OTHER = "another addon's or the game's"
 L.DEBUG_SHAPE_NONE = "not set"
 L.DEBUG_BORDER = "Border art: %s; in use: %s"
 L.DEBUG_NO_ATLAS = "NO ATLAS"
-L.DEBUG_FROM_ATLAS = "from the atlas"
-L.DEBUG_FROM_THEME = "no slice data, Mini Map's own numbers"
+-- Where the border's slice margins came from.
+L.FROM = {
+	atlas = "from the atlas",
+	atlaspx = "from the atlas, file pixels converted",
+	share = "no slice data, cut at Mini Map's share",
+	theme = "no slice data, Mini Map's own numbers",
+}
+-- Why a border atlas wasn't used.
+L.REASON = {
+	missing = "not in this game",
+	nofile = "no file",
+	badsize = "no size",
+	badcoords = "no texture coordinates",
+	nomargins = "no usable margins",
+	nofit = "margins don't fit",
+	error = "error while drawing",
+}
+
+L.HELP_ART = "/mmap art - list which border art this game has (for bug reports)."
+L.ART_FOUND = "%s: found %sx%s, raw %s, file %s, slice %s"
+L.ART_MISSING = "%s: missing"
+L.ART_NO_SLICE = "none"
+L.ART_IN_USE = "Border in use: %s"
+L.ART_SKIPPED = "Not used: %s"
 
 L.HELP_6 = "/mmap bookson or /mmap booksoff - Library Books' far-away minimap pins on the square's edge (on) or on its own circle (off)."
 L.BOOKS_ON = "Library Books pins now follow the square minimap."

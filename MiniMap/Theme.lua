@@ -7,18 +7,28 @@ local Theme = {
 	mask = "Interface\\BUTTONS\\WHITE8X8",
 
 	-- Border of the map, header strip and icon bar. A theme swaps this whole table.
-	-- 1st choice ("sliced"): Blizzard's main action bar frame atlas, cut into 4 corners + 4
-	--   edges from its own atlas info (file, texcoords, slice margins read live from
-	--   C_Texture.GetAtlasInfo); no centre piece, so nothing covers the map.
+	-- 1st choice ("sliced"): the first usable atlas of `candidates` (main action bar frame,
+	--   then the action button frame), cut into 4 corners + 4 edges from its own atlas info
+	--   (file, texcoords, slice margins read live from C_Texture.GetAtlasInfo); no centre
+	--   piece, so nothing covers the map.
 	-- 2nd ("nineslice"): the thin tooltip NineSlice layout (centre hidden).
 	-- 3rd ("backdrop"): the tooltip border file via BackdropTemplate.
 	-- Sides in the tables below are in the order Left, Top, Right, Bottom.
 	border = {
-		atlas = "UI-HUD-ActionBar-Frame",
-		margins = { 20, 25, 20, 25 }, -- atlas px; only used when the client has no sliceData
-		shadow = { 2, 2, 6, 5 },      -- see-through shadow per side, atlas px (Blizzard draws the
-		                              -- bar art 4/4 px past top-left, 8/7 px past bottom-right)
-		scale = 0.5,                  -- map border: margins drawn at this size (the file is 2x)
+		-- Cut atlases, tried in this order. margins (atlas px) only when the atlas has no
+		-- sliceData; share = part of the atlas per side used as corner/edge when it has none
+		-- (button frames). shadow = see-through shadow per side, atlas px.
+		candidates = {
+			-- Main action bar frame (Forever's MainActionBar.xml BorderArt; Blizzard draws it
+			-- a few px past the bar on every side, more at the bottom-right in retail).
+			{ atlas = "UI-HUD-ActionBar-Frame", margins = { 20, 25, 20, 25 }, shadow = { 2, 2, 6, 5 } },
+			-- Action button frame (the extra bars' look; our slots use the same art).
+			{ atlas = "UI-HUD-ActionBar-IconFrame-Border", share = 0.3, shadow = { 1, 1, 1, 1 } },
+			{ atlas = "UI-HUD-ActionBar-IconFrame", share = 0.3, shadow = { 1, 1, 1, 1 } },
+		},
+		-- Extra atlases `/mmap art` reports (read only, never drawn from this list).
+		reportAtlases = { "ui-hud-actionbar-iconframe-slot", "!ui-hud-actionbar-frame-divider-threeslice-center" },
+		scale = 0.5,                -- map border: margins drawn at this size (the file is 2x)
 		stripScale = 0.35,            -- header strip and icon bar (only 31-40 px tall)
 		overlap = 2,                  -- map px the inner edge of the frame reaches over the map
 		gap = 2,                      -- visible gap between the map's frame and a strip's frame
@@ -100,10 +110,14 @@ local Theme = {
 
 	-- Mail and addon compartment: in the map's corners, this far in (map pixels).
 	cornerInset = 5,
-	-- Addon compartment (addon counter): top-right corner. compartmentRaise: extra map px in from
-	-- the corner's top/bottom side (e.g. 39 with "BOTTOMRIGHT" clears the zoom buttons' hover box).
-	compartmentPoint = "TOPRIGHT",
+	-- Addon compartment (addon counter): bottom-right corner (the zoom buttons moved to the
+	-- top-right). compartmentRaise: extra map px in from the corner's top/bottom side.
+	compartmentPoint = "BOTTOMRIGHT",
 	compartmentRaise = 0,
+	-- Blizzard's zoom buttons + their 40 px hover box, moved into this corner (map px):
+	-- ZoomIn's outer corner `inset` px in, ZoomOut `step` px further in on both axes (Blizzard's
+	-- own spacing), hover box centred `hitCenter` px in.
+	zoom = { point = "TOPRIGHT", inset = 4, step = 16, hitCenter = 22 },
 
 	-- Day/night disc: in the map's bottom-left corner (top-left with Header Underneath).
 	dielAtlas = "UI-HUD-Minimap-Frame-Cycle",
@@ -161,35 +175,83 @@ end
 
 local function IsNum(v) return type(v) == "number" and v == v end
 
--- The border atlas's live info: file, size, texcoords and slice margins (L, T, R, B). Margins
--- come from the atlas's sliceData, else from Theme.border.margins. nil when the client has no
--- such atlas or its info is unusable (then the fallbacks are used).
-function Theme.SliceInfo()
-	local b = Theme.border
-	if not (b and b.atlas and C_Texture and C_Texture.GetAtlasInfo) then return end
-	local ok, info = pcall(C_Texture.GetAtlasInfo, b.atlas)
-	if not ok or type(info) ~= "table" then return end
-	local file = info.file or info.filename
-	local w, h = info.width, info.height
-	local L, R, T, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
-	if not (file and IsNum(w) and IsNum(h) and w > 0 and h > 0
-		and IsNum(L) and IsNum(R) and IsNum(T) and IsNum(B)) then return end
-	local s, m, from = info.sliceData, nil, "theme"
+-- Raw atlas info, read only and safe: the table, or nil.
+function Theme.AtlasInfo(name)
+	if not (name and C_Texture and C_Texture.GetAtlasInfo) then return end
+	local ok, info = pcall(C_Texture.GetAtlasInfo, name)
+	if ok and type(info) == "table" then return info end
+end
+
+-- Pixel size of the atlas region (GetAtlasInfo `rawSize`, a vector with x/y), or nil.
+local function RawSize(info)
+	local r = info.rawSize
+	if type(r) == "table" and IsNum(r.x) and IsNum(r.y) and r.x > 0 and r.y > 0 then return r.x, r.y end
+end
+
+local function SliceMargins(info)
+	local s = info.sliceData
 	if type(s) == "table" and IsNum(s.marginLeft) and IsNum(s.marginTop)
 		and IsNum(s.marginRight) and IsNum(s.marginBottom) then
-		m, from = { s.marginLeft, s.marginTop, s.marginRight, s.marginBottom }, "atlas"
-	else
-		m = b.margins
+		return { s.marginLeft, s.marginTop, s.marginRight, s.marginBottom }, s.sliceMode
 	end
-	if type(m) ~= "table" then return end
+end
+
+local function Fits(m, w, h) return m[1] + m[3] < w and m[2] + m[4] < h end
+
+-- One candidate atlas's live info for cutting: file, size, texcoords and margins (L, T, R, B)
+-- in atlas units. Margins: the atlas's sliceData (converted from file pixels via rawSize when
+-- they don't fit the atlas size), else `cand.share` of the atlas per side, else
+-- `cand.margins`. Returns the info, or nil + a reason code (missing, nofile, badsize,
+-- badcoords, nomargins, nofit) when unusable (then the next candidate / fallback is used).
+function Theme.SliceInfo(cand)
+	if type(cand) ~= "table" then return nil, "missing" end
+	local info = Theme.AtlasInfo(cand.atlas)
+	if not info then return nil, "missing" end
+	local file = info.file or info.filename
+	if not file then return nil, "nofile" end
+	local w, h = info.width, info.height
+	if not (IsNum(w) and IsNum(h) and w > 0 and h > 0) then return nil, "badsize" end
+	local L, R, T, B = info.leftTexCoord, info.rightTexCoord, info.topTexCoord, info.bottomTexCoord
+	if not (IsNum(L) and IsNum(R) and IsNum(T) and IsNum(B)) then return nil, "badcoords" end
+	local m, mode = SliceMargins(info)
+	local from = "atlas"
+	if m and not Fits(m, w, h) then
+		local rw, rh = RawSize(info)
+		if rw then
+			m = { m[1] * w / rw, m[2] * h / rh, m[3] * w / rw, m[4] * h / rh }
+			from = "atlaspx"
+		end
+	elseif not m then
+		if IsNum(cand.share) and cand.share > 0 and cand.share < 0.5 then
+			m, from = { w * cand.share, h * cand.share, w * cand.share, h * cand.share }, "share"
+		else
+			m, from = cand.margins, "theme"
+		end
+	end
+	if type(m) ~= "table" then return nil, "nomargins" end
+	local any = false
 	for i = 1, 4 do
-		if not (IsNum(m[i]) and m[i] > 0) then return end
+		if not (IsNum(m[i]) and m[i] >= 0) then return nil, "nomargins" end
+		if m[i] > 0 then any = true end
 	end
-	if m[1] + m[3] >= w or m[2] + m[4] >= h then return end
+	if not any then return nil, "nomargins" end
+	if not Fits(m, w, h) then return nil, "nofit" end
 	return {
-		file = file, w = w, h = h, L = L, R = R, T = T, B = B, m = m, from = from,
-		mode = type(s) == "table" and s.sliceMode or nil,
+		atlas = cand.atlas, file = file, w = w, h = h, L = L, R = R, T = T, B = B, m = m,
+		from = from, mode = mode,
 	}
+end
+
+-- The first usable candidate: its info + the candidate, and the reasons earlier candidates
+-- were skipped (list of { atlas, reason }).
+function Theme.PickSliced()
+	local skipped = {}
+	for _, cand in ipairs(Theme.border.candidates or {}) do
+		local si, why = Theme.SliceInfo(cand)
+		if si then return si, cand, skipped end
+		skipped[#skipped + 1] = { cand.atlas, why }
+	end
+	return nil, nil, skipped
 end
 
 -- 4 corners + 4 edges (no centre) cut from the atlas's own texcoords, each piece's size
@@ -238,28 +300,36 @@ local function MakeSliced(frame, si, scale, made)
 	return p
 end
 
--- Gives `frame` a Blizzard border: the sliced action bar frame (map: border.scale, strip:
+-- Gives `frame` a Blizzard border: the first usable cut candidate (map: border.scale, strip:
 -- border.stripScale), else the tooltip NineSlice, else the backdrop file. The frame should be
 -- made with BackdropTemplate so the last fallback works. Returns the kind used, or nil.
 local borderKind = setmetatable({}, { __mode = "k" })   -- [our frame] = "sliced"/"nineslice"/"backdrop"
 local borderScale = setmetatable({}, { __mode = "k" })  -- [our frame] = scale of the sliced pieces
 local borderMargins = setmetatable({}, { __mode = "k" }) -- [our frame] = margins used (L, T, R, B)
+local borderShadow = setmetatable({}, { __mode = "k" })  -- [our frame] = candidate's shadow (L, T, R, B)
+local borderAtlas = setmetatable({}, { __mode = "k" })   -- [our frame] = candidate atlas name
 Theme.borderPieces = setmetatable({}, { __mode = "k" }) -- [our frame] = sliced pieces by key
 
 function Theme.ApplyBorder(frame, strip)
 	local b = Theme.border
-	local si = frame.CreateTexture and Theme.SliceInfo()
-	if si then
+	if frame.CreateTexture then
 		local scale = strip and b.stripScale or b.scale
-		local made = {}
-		local ok, pieces = pcall(MakeSliced, frame, si, scale, made)
-		if ok and pieces then
-			borderKind[frame], borderScale[frame], borderMargins[frame] = "sliced", scale, si.m
-			Theme.borderPieces[frame] = pieces
-			return "sliced"
-		end
-		for _, tex in ipairs(made) do
-			if tex.Hide then tex:Hide() end
+		for _, cand in ipairs(b.candidates or {}) do
+			local si = Theme.SliceInfo(cand)
+			if si then
+				local made = {}
+				local ok, pieces = pcall(MakeSliced, frame, si, scale, made)
+				if ok and pieces then
+					borderKind[frame], borderScale[frame], borderMargins[frame] = "sliced", scale, si.m
+					borderShadow[frame] = type(cand.shadow) == "table" and cand.shadow or { 0, 0, 0, 0 }
+					borderAtlas[frame] = cand.atlas
+					Theme.borderPieces[frame] = pieces
+					return "sliced"
+				end
+				for _, tex in ipairs(made) do
+					if tex.Hide then tex:Hide() end
+				end
+			end
 		end
 	end
 	if NineSliceUtil and NineSliceUtil.ApplyLayoutByName and Theme.HasAtlas(b.checkAtlas) then
@@ -284,14 +354,18 @@ function Theme.BorderKind(frame)
 	return frame and borderKind[frame] or nil
 end
 
+function Theme.BorderAtlas(frame)
+	return frame and borderAtlas[frame] or nil
+end
+
 -- How far `frame`'s visible border sits inside its edge per side (own units), returned as
 -- left, right, top, bottom: the shadow for the sliced frame, layoutInset for the tooltip
 -- layout, 0 for the backdrop or no border.
 function Theme.ArtInset(frame)
 	local kind = borderKind[frame]
 	if kind == "sliced" then
-		local s, k = Theme.border.shadow, borderScale[frame] or 1
-		return s[1] * k, s[3] * k, s[2] * k, s[4] * k
+		local s, k = borderShadow[frame] or { 0, 0, 0, 0 }, borderScale[frame] or 1
+		return (s[1] or 0) * k, (s[3] or 0) * k, (s[2] or 0) * k, (s[4] or 0) * k
 	elseif kind == "nineslice" then
 		local i = Theme.border.layoutInset or 0
 		return i, i, i, i
@@ -354,21 +428,80 @@ function Theme.AddBackground(frame)
 	return tex
 end
 
--- One line for /mmap debug: atlas found or not, size, slice margins + mode and where they
--- came from, and the kind in use on `frame`.
+-- Short number for chat lines (2 decimals at most).
+local function Num(v)
+	if not IsNum(v) then return tostring(v) end
+	local s = ("%.2f"):format(v):gsub("0+$", ""):gsub("%.$", "")
+	return s
+end
+
+local function Reason(code)
+	local r = ns.L and ns.L.REASON
+	return (r and r[code]) or tostring(code)
+end
+
+-- What the map's border is, for chat: the kind in use (+ atlas when cut) and, when the
+-- first candidate (the main action bar frame) wasn't used, which candidates were skipped
+-- and why. Returns kind text, skipped text (or nil).
+function Theme.BorderUse(frame)
+	local kind = (frame and borderKind[frame]) or "-"
+	if kind == "sliced" and borderAtlas[frame] then kind = kind .. " " .. borderAtlas[frame] end
+	local _, _, skipped = Theme.PickSliced()
+	if #skipped == 0 then return kind end
+	local parts = {}
+	for _, s in ipairs(skipped) do parts[#parts + 1] = tostring(s[1]) .. ": " .. Reason(s[2]) end
+	return kind, table.concat(parts, "; ")
+end
+
+-- One line for /mmap debug: the atlas used (size, margins + mode + source) or NO ATLAS,
+-- and the kind in use on `frame` with the skipped candidates' reasons.
 function Theme.BorderDebug(frame)
 	local L = ns.L or {}
-	local si = Theme.SliceInfo()
+	local si = Theme.PickSliced()
 	local art
 	if si then
 		local m = si.m
-		art = ("%s %sx%s, slice %s,%s,%s,%s mode %s (%s)"):format(Theme.border.atlas, tostring(si.w), tostring(si.h),
-			tostring(m[1]), tostring(m[2]), tostring(m[3]), tostring(m[4]), tostring(si.mode or "-"),
-			si.from == "atlas" and (L.DEBUG_FROM_ATLAS or "atlas") or (L.DEBUG_FROM_THEME or "theme"))
+		art = ("%s %sx%s, slice %s,%s,%s,%s mode %s (%s)"):format(tostring(si.atlas), Num(si.w), Num(si.h),
+			Num(m[1]), Num(m[2]), Num(m[3]), Num(m[4]), tostring(si.mode or "-"),
+			(L.FROM and L.FROM[si.from]) or si.from)
 	else
-		art = (L.DEBUG_NO_ATLAS or "NO ATLAS") .. " " .. tostring(Theme.border.atlas)
+		art = L.DEBUG_NO_ATLAS or "NO ATLAS"
 	end
-	return art, (frame and borderKind[frame]) or "-"
+	local kind, why = Theme.BorderUse(frame)
+	if why then kind = kind .. " (" .. why .. ")" end
+	return art, kind
+end
+
+-- Lines for /mmap art: one per candidate and report atlas (found with size, raw size, file,
+-- slice margins + mode; or missing), then the border in use and why candidates were skipped.
+-- Read only.
+function Theme.ArtReport(frame)
+	local L = ns.L or {}
+	local lines, seen, names = {}, {}, {}
+	for _, cand in ipairs(Theme.border.candidates or {}) do names[#names + 1] = cand.atlas end
+	for _, n in ipairs(Theme.border.reportAtlases or {}) do names[#names + 1] = n end
+	names[#names + 1] = Theme.border.checkAtlas
+	for _, name in ipairs(names) do
+		if name and not seen[name] then
+			seen[name] = true
+			local info = Theme.AtlasInfo(name)
+			if info then
+				local rw, rh = RawSize(info)
+				local m, mode = SliceMargins(info)
+				local slice = m and ("%s,%s,%s,%s mode %s"):format(Num(m[1]), Num(m[2]), Num(m[3]), Num(m[4]), tostring(mode))
+					or (L.ART_NO_SLICE or "none")
+				lines[#lines + 1] = (L.ART_FOUND or "%s: found %sx%s, raw %s, file %s, slice %s"):format(name,
+					Num(info.width), Num(info.height), rw and (Num(rw) .. "x" .. Num(rh)) or "-",
+					tostring(info.file or info.filename), slice)
+			else
+				lines[#lines + 1] = (L.ART_MISSING or "%s: missing"):format(name)
+			end
+		end
+	end
+	local kind, why = Theme.BorderUse(frame)
+	lines[#lines + 1] = (L.ART_IN_USE or "Border in use: %s"):format(kind)
+	if why then lines[#lines + 1] = (L.ART_SKIPPED or "Not used: %s"):format(why) end
+	return lines
 end
 
 -- Template name for frames that may need the backdrop fallback.

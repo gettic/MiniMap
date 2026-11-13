@@ -332,6 +332,16 @@ local function PrintDebug()
 	end
 end
 
+-- /mmap art: which border atlases this client has (read only, pcall).
+local function PrintArt()
+	local ok, lines = pcall(ns.Theme.ArtReport, ns.Square and ns.Square.border)
+	if not (ok and type(lines) == "table") then
+		ns.Print(L.DEBUG_UNREADABLE)
+		return
+	end
+	for _, line in ipairs(lines) do ns.Print("%s", line) end
+end
+
 -- Returns the command word and up to two argument words (lower case, "" when missing).
 local function ParseSlash(msg)
 	msg = (strtrim(tostring(msg or "")):lower():gsub("[%-_:=]", " "):gsub("%s+", " "))
@@ -350,6 +360,8 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 	elseif cmd == "debug" then
 		local ok = pcall(PrintDebug)
 		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
+	elseif cmd == "art" then
+		PrintArt()
 	elseif cmd == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -371,6 +383,7 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)
+		ns.Print(L.HELP_ART)
 		ns.Print(L.HELP_6)
 		if ns.Zygor.IsZygorLoaded() then ns.Print(L.HELP_7) end
 	end

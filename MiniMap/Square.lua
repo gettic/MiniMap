@@ -258,7 +258,7 @@ end
 
 -- Mail (IndicatorFrame) top-left inside the map (bottom-left with Header Underneath: the
 -- day/night disc then takes the top-left). The addon compartment goes to T.compartmentPoint
--- (top-right; Blizzard's zoom buttons own the bottom-right corner and must stay clickable).
+-- (bottom-right; Blizzard's zoom buttons are moved to the top-right by PlaceZoom).
 -- Out of combat (square-pieces queue).
 -- `inX`/`inY`: extra map pixels inward (beyond cornerInset) from the corner's sides.
 local function PutInCorner(f, point, inX, inY)
@@ -278,6 +278,33 @@ end
 function Square:PlaceCorners(under)
 	PutInCorner(MinimapCluster and MinimapCluster.IndicatorFrame, under and "BOTTOMLEFT" or "TOPLEFT")
 	PutInCorner(AddonCompartmentFrame, T.compartmentPoint, 0, T.compartmentRaise)
+end
+
+-- Blizzard's zoom buttons and their hover box (Minimap.ZoomIn / ZoomOut / ZoomHitArea) into
+-- T.zoom.point. They are Minimap's children (units = map px), placed only in Blizzard's XML and
+-- never re-anchored by its code; their hover show/hide (Minimap OnEnter/OnLeave + IsMouseOver)
+-- moves with them. Only ClearAllPoints/SetPoint, out of combat (square-pieces queue).
+function Square:PlaceZoom()
+	local z = T.zoom
+	if not (z and Minimap) then return end
+	local point = z.point
+	local sx = point:find("LEFT") and 1 or -1
+	local sy = point:find("TOP") and -1 or 1
+	local zin, zout, hit = Minimap.ZoomIn, Minimap.ZoomOut, Minimap.ZoomHitArea
+	if Usable(zin) then
+		zin:ClearAllPoints()
+		zin:SetPoint(point, Minimap, point, sx * z.inset, sy * z.inset)
+	end
+	if Usable(zout) then
+		-- ZoomIn is 17x17: its centre is inset + 8.5 in; ZoomOut sits `step` further in.
+		local c = z.inset + 8.5 + z.step
+		zout:ClearAllPoints()
+		zout:SetPoint("CENTER", Minimap, point, sx * c, sy * c)
+	end
+	if Usable(hit) then
+		hit:ClearAllPoints()
+		hit:SetPoint("CENTER", Minimap, point, sx * z.hitCenter, sy * z.hitCenter)
+	end
 end
 
 -- Blizzard's day/night disc (Forever: MinimapCluster.DielFrame, sized by the atlas, on the old
@@ -481,6 +508,7 @@ function Square:PlacePieces(under, copy)
 		self.copyPending = false
 		ns.SafeRun("Header", self.PlaceHeader, self, u)
 		ns.SafeRun("Corners", self.PlaceCorners, self, u)
+		ns.SafeRun("Zoom", self.PlaceZoom, self)
 		ns.SafeRun("DayNight", self.PlaceDiel, self, u)
 		self.copying = false
 		ns.SafeRun("Layer", self.ApplyLayer, self)

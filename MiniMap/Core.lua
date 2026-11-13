@@ -324,27 +324,60 @@ local function PrintDebug()
 	ns.Print(L.DEBUG_LEARN, P.lastLearn or L.DEBUG_LEARN_NONE)
 end
 
+-- `/mmap ore` words. WoW Forever's chat box seems to run a slash command when space is pressed
+-- after its second word, so `/mmap ore on` arrives as "ore"; the one-word forms (`oreon`) always
+-- arrive whole. Two-word and `ore-on` / `ore:on` / `ore=on` forms are accepted too.
+local ORE_ARGS = {
+	on = "on", ["1"] = "on", ["true"] = "on", show = "on", yes = "on",
+	off = "off", ["0"] = "off", ["false"] = "off", hide = "off", no = "off",
+	clear = "clear", clearall = "clearall",
+}
+
+-- Returns the command word and up to two argument words (lower case, "" when missing).
+local function ParseSlash(msg)
+	msg = (strtrim(tostring(msg or "")):lower():gsub("[%-_:=]", " "):gsub("%s+", " "))
+	local cmd, arg, arg2 = msg:match("^(%S*)%s*(%S*)%s*(%S*)")
+	cmd, arg, arg2 = cmd or "", arg or "", arg2 or ""
+	if arg == "" then
+		local joined = cmd:match("^ore(%w+)$")
+		if joined then cmd, arg = "ore", joined end
+	end
+	if cmd == "ore" and arg == "clear" and arg2 == "all" then arg = "clearall" end
+	return cmd, arg, arg2, msg
+end
+ns.ParseSlash = ParseSlash
+
+local function OreCommand(arg, raw)
+	local P = ns.OrePins
+	local what = ORE_ARGS[arg]
+	if arg == "" then
+		P:Status()
+	elseif what == "on" then
+		P:Set(true)
+	elseif what == "off" then
+		P:Set(false)
+	elseif what == "clear" then
+		P:Clear(false)
+	elseif what == "clearall" then
+		P:Clear(true)
+	else
+		ns.Print(L.ORE_UNKNOWN, arg, raw)
+	end
+end
+
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
-	msg = (strtrim(msg or ""):lower():gsub("%s+", " "))
-	if msg == "names" then
+	local cmd, arg, _, raw = ParseSlash(msg)
+	if cmd == "names" then
 		PrintNames()
-	elseif msg == "pos" then
+	elseif cmd == "pos" then
 		PrintPos()
-	elseif msg == "debug" then
+	elseif cmd == "debug" then
 		local ok = pcall(PrintDebug)
 		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
-	elseif msg == "ore" and ns.db then
-		ns.OrePins:Status()
-	elseif msg == "ore on" and ns.db then
-		ns.OrePins:Set(true)
-	elseif msg == "ore off" and ns.db then
-		ns.OrePins:Set(false)
-	elseif msg == "ore clear" and ns.db then
-		ns.OrePins:Clear(false)
-	elseif msg == "ore clear all" and ns.db then
-		ns.OrePins:Clear(true)
-	elseif msg == "rescan" and ns.IconBar.active then
+	elseif cmd == "ore" and ns.db then
+		OreCommand(arg, raw)
+	elseif cmd == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
 			ns.RunOutOfCombat("scan", function() ns.IconBar:Scan() end)

@@ -558,7 +558,7 @@ function Pins:Setup()
 	self:Refresh()
 end
 
--- `/mmap ore on|off` (saved).
+-- `/mmap oreon|oreoff` (saved).
 function Pins:Set(on)
 	ns.db.oreLabels = on and true or false
 	Listen(on)
@@ -577,7 +577,7 @@ function Pins:Status()
 	if other then ns.Print(L.ORE_OTHER, other) end
 end
 
--- `/mmap ore clear` (this map) and `/mmap ore clear all`: only on the player's own command.
+-- `/mmap oreclear` (this map) and `/mmap oreclearall`: only on the player's own command.
 function Pins:Clear(all)
 	local store = Store()
 	if not store then return end

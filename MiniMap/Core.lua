@@ -156,8 +156,19 @@ events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
 events:RegisterEvent("PLAYER_ENTERING_WORLD")
 events:RegisterEvent("PLAYER_REGEN_ENABLED")
+-- Moments Blizzard may re-lay or re-clamp the UI (another addon's blocked action included):
+-- put the map back on Edit Mode's saved spot if a screen-clamp push moved it.
+local PLACE_EVENTS = {
+	ADDON_ACTION_BLOCKED = true, ADDON_ACTION_FORBIDDEN = true,
+	UI_SCALE_CHANGED = true, DISPLAY_SIZE_CHANGED = true, EDIT_MODE_LAYOUTS_UPDATED = true,
+}
+for e in pairs(PLACE_EVENTS) do pcall(events.RegisterEvent, events, e) end
 
 events:SetScript("OnEvent", function(_, event, arg1)
+	if PLACE_EVENTS[event] or event == "PLAYER_ENTERING_WORLD" then
+		if ns.setupDone and ns.Square.active then ns.Square:KeepPlaceSoon(event) end
+		if event ~= "PLAYER_ENTERING_WORLD" then return end
+	end
 	if event == "ADDON_LOADED" then
 		if arg1 == ADDON then
 			InitDB()
@@ -462,6 +473,10 @@ local function PrintDebug()
 	if ns.Square and ns.Square.HeaderDebug then
 		local ok, s, t, z, c, gl, gr = pcall(ns.Square.HeaderDebug)
 		if ok then ns.Print(L.DEBUG_HEADER, s, t, z, c, gl, gr) end
+	end
+	if ns.Square and ns.Square.PlaceDebug then
+		local ok, map, saved, clamp, buffs, n, last = pcall(ns.Square.PlaceDebug)
+		if ok then ns.Print(L.DEBUG_PLACE, map, saved, clamp, buffs, n, last) end
 	end
 	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end

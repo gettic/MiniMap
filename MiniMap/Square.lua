@@ -503,25 +503,161 @@ local function ValidAnchor(a)
 		and (a.relativeTo == nil or type(a.relativeTo) == "string" or type(a.relativeTo) == "table")
 end
 
-local function Reanchor()
-	if InCombatLockdown() then return end
-	local c = MinimapCluster
-	if not Usable(c) then return end
+local function InEditMode()
 	local em = EditModeManagerFrame
-	if not (em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive()) then return end
-	if c.isDragging then return end
+	return em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive()
+end
+
+-- Edit Mode's saved anchor(s) for the cluster (read only), or nil.
+local function SavedAnchor(c)
 	local info = c.systemInfo
 	local a = type(info) == "table" and info.anchorInfo
 	if not ValidAnchor(a) then return end
 	local a2 = info.anchorInfo2
 	if a2 ~= nil and not ValidAnchor(a2) then return end
-	local scale = c:GetScale()
-	if not (scale and scale > 0) then return end
+	return a, a2
+end
+
+local function PutAnchor(c, a, a2, scale)
 	c:ClearAllPoints()
 	c:SetPoint(a.point, a.relativeTo or "UIParent", a.relativePoint, a.offsetX / scale, a.offsetY / scale)
 	if a2 then
 		c:SetPoint(a2.point, a2.relativeTo or "UIParent", a2.relativePoint, a2.offsetX / scale, a2.offsetY / scale)
 	end
+end
+
+local function Reanchor()
+	if InCombatLockdown() then return end
+	local c = MinimapCluster
+	if not Usable(c) then return end
+	if not InEditMode() then return end
+	if c.isDragging then return end
+	local a, a2 = SavedAnchor(c)
+	if not a then return end
+	local scale = c:GetScale()
+	if not (scale and scale > 0) then return end
+	PutAnchor(c, a, a2, scale)
+end
+
+-- Keep the map where Edit Mode saved it, outside Edit Mode too. A screen-clamp push (the clamp
+-- worked out with Blizzard's full-cluster insets for a moment, e.g. while the UI was hidden or
+-- Blizzard re-laid the cluster) moves the cluster in from the screen edge and the push stays
+-- after our insets come back; anything snapped to the cluster in Edit Mode (often the buffs)
+-- moves with it. This puts the cluster back on Edit Mode's own anchor (read only), plain
+-- ClearAllPoints/SetPoint, out of combat, never while Edit Mode is open or the cluster is in its
+-- default (managed) place. Only when the cluster still hangs on the same points and frames as
+-- the saved anchor: an addon that moved it elsewhere is left alone.
+local function RelFrame(a)
+	local r = a.relativeTo
+	if r == nil then return UIParent end
+	if type(r) == "string" then return _G[r] end
+	return r
+end
+
+local MAX_PUSH = 200 -- cluster units; bigger offsets are someone's own move, not a clamp push
+
+-- "same", "pushed" (same points, offsets moved; returns the biggest move) or "other".
+local function CompareAnchor(c, a, a2, scale)
+	local want = { a, a2 }
+	local n = c:GetNumPoints()
+	if n ~= #want then return "other" end
+	local worst = 0
+	for _, x in ipairs(want) do
+		local found
+		for i = 1, n do
+			local p, rel, rp, ox, oy = c:GetPoint(i)
+			if p == x.point then
+				if rp ~= x.relativePoint or rel ~= RelFrame(x) then return "other" end
+				if type(ox) ~= "number" or type(oy) ~= "number" then return "other" end
+				local d = math.max(math.abs(ox - x.offsetX / scale), math.abs(oy - x.offsetY / scale))
+				if d > worst then worst = d end
+				found = true
+				break
+			end
+		end
+		if not found then return "other" end
+	end
+	if worst <= 0.5 then return "same", 0 end
+	if worst > MAX_PUSH then return "other", worst end
+	return "pushed", worst
+end
+
+-- `force`: re-set the anchor even when GetPoint already matches (a push the client keeps
+-- outside the anchor values is undone too). `why` goes into /mmap debug.
+function Square:KeepPlace(force, why)
+	if not self.active or InCombatLockdown() or InEditMode() then return end
+	local c = MinimapCluster
+	if not Usable(c) or c.isDragging then return end
+	local info = c.systemInfo
+	if type(info) ~= "table" or info.isInDefaultPosition then return end
+	local a, a2 = SavedAnchor(c)
+	if not a then return end
+	local scale = c:GetScale()
+	if not (scale and scale > 0) then return end
+	local ok, state, moved = pcall(CompareAnchor, c, a, a2, scale)
+	if not ok or state == "other" then
+		self.placeLast = (why or "?") .. ": " .. (ok and "left alone (other anchor)" or "unreadable")
+		return
+	end
+	if state == "same" and not force then return end
+	self:ApplyClamp()
+	PutAnchor(c, a, a2, scale)
+	if state == "pushed" then
+		self.placeFixes = (self.placeFixes or 0) + 1
+		self.placeLast = string.format("%s: moved back %.1f", why or "?", moved)
+	end
+end
+
+-- Next frame and again 1 s later (a re-layout can settle late), once however often asked.
+function Square:KeepPlaceSoon(why)
+	if not self.active or self.keepPending then return end
+	self.keepPending = true
+	local function run()
+		ns.RunOutOfCombat("keep-place", function()
+			ns.SafeRun("KeepPlace", Square.KeepPlace, Square, true, why)
+		end)
+	end
+	C_Timer.After(0, function()
+		Square.keepPending = false
+		run()
+	end)
+	-- Only one 1 s run waits at a time, however many events come in.
+	if not self.keepLatePending then
+		self.keepLatePending = true
+		C_Timer.After(1, function()
+			Square.keepLatePending = false
+			run()
+		end)
+	end
+end
+
+-- /mmap debug: the cluster's anchor, Edit Mode's saved one, clamp insets, the buffs' anchor
+-- and how often KeepPlace moved the map back. Read only.
+local function PointText(f)
+	if not (f and f.GetPoint and f.GetNumPoints) or (f.IsForbidden and f:IsForbidden()) then return "-" end
+	if f:GetNumPoints() < 1 then return "-" end
+	local p, rel, rp, x, y = f:GetPoint(1)
+	local relName = rel and rel.GetName and rel:GetName() or (rel and "?" or "UIParent")
+	return string.format("%s %s %s %.1f %.1f", tostring(p), tostring(relName), tostring(rp), x or 0, y or 0)
+end
+
+function Square.PlaceDebug()
+	local c = MinimapCluster
+	local map = PointText(c)
+	local saved = "-"
+	local a = c and SavedAnchor(c)
+	if a then
+		local s = c:GetScale() or 1
+		local rel = type(a.relativeTo) == "table" and (a.relativeTo:GetName() or "?") or tostring(a.relativeTo or "UIParent")
+		saved = string.format("%s %s %s %.1f %.1f", a.point, rel, a.relativePoint, a.offsetX / s, a.offsetY / s)
+		if c.systemInfo.isInDefaultPosition then saved = saved .. " (default)" end
+	end
+	local clamp = "-"
+	if c and c.GetClampRectInsets then
+		local l, r, t, b = c:GetClampRectInsets()
+		clamp = string.format("%.1f/%.1f/%.1f/%.1f", l or 0, r or 0, t or 0, b or 0)
+	end
+	return map, saved, clamp, PointText(BuffFrame), tostring(Square.placeFixes or 0), Square.placeLast or "-"
 end
 
 local function ClampChanged(old, new)
@@ -539,6 +675,10 @@ function Square:FitSelection()
 	local sel = c and c.Selection
 	if not (Usable(c) and Usable(sel) and sel.SetPoint and sel.SetAllPoints) then return end
 	local cl, cr, ct, cb = ScreenRect(c)
+	-- The cluster itself isn't shown (UI hidden with Alt+Z, a cinematic, a loading moment): keep
+	-- our last box and clamp. Dropping to Blizzard's 0 insets here let the screen clamp push the
+	-- map in from the edge when it showed again (the "map jumped left" bug).
+	if not cl then return end
 	local bar = ns.IconBar and ns.IconBar.frame
 	local uL, uR, uT, uB
 	for _, f in ipairs({ self.border, self.header, bar }) do
@@ -550,8 +690,8 @@ function Square:FitSelection()
 			uB = uB and math.min(uB, b) or b
 		end
 	end
-	if not (uL and cl) then
-		-- Nothing of ours shows: Blizzard's own box and clamp.
+	if not uL then
+		-- The cluster shows but nothing of ours does: Blizzard's own box and clamp.
 		self.fit = nil
 		if ns.db then ns.db.editFit = nil end
 		sel:ClearAllPoints()
@@ -573,8 +713,10 @@ function Square:FitSelection()
 		ns.db.editFit = { sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
 	end
 	self:ApplyClamp()
-	-- New insets in Edit Mode: undo a stale clamp push (only inside Edit Mode, out of combat).
-	if ClampChanged(oldClamp, self.fit.clamp) then Reanchor() end
+	-- New insets: undo a stale clamp push (Edit Mode open: its live anchor; closed: KeepPlace).
+	if ClampChanged(oldClamp, self.fit.clamp) then
+		if InEditMode() then Reanchor() else self:KeepPlace(true, "clamp") end
+	end
 end
 
 -- Puts a box + clamp set on the cluster (no rect reads, out of combat).
@@ -900,8 +1042,14 @@ function Square:InstallHooks()
 			hooksecurefunc(MinimapCluster, method, function()
 				ns.SafeRun("EditModeBox", Square.ApplyClamp, Square)
 				Square:QueueFit()
+				if method == "ApplySystemAnchor" then Square:KeepPlaceSoon("re-anchor") end
 			end)
 		end
+	end
+	-- The UI or the map shows again (Alt+Z, cinematics, pet battles): undo a clamp push.
+	MinimapCluster:HookScript("OnShow", function() Square:KeepPlaceSoon("map shown") end)
+	if UIParent and UIParent.HookScript then
+		UIParent:HookScript("OnShow", function() Square:KeepPlaceSoon("UI shown") end)
 	end
 end
 

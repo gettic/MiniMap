@@ -184,7 +184,8 @@ end
 local standIns = {}
 
 local function OursOrMap(rel)
-	return rel ~= nil and (rel == Minimap or rel == Square.header or rel == Square.border)
+	return rel ~= nil and (rel == Minimap or rel == Square.header or rel == Square.border
+		or (MinimapCluster and rel == standIns[Container()]))
 end
 
 -- OnShow/OnHide of the Blizzard child: touches only our stand-in.
@@ -676,10 +677,28 @@ local function PointXY(f, point)
 	return x * s, y * s
 end
 
+-- How far the game's screen clamp moves a cluster whose clamp rect (rect + insets, screen units)
+-- is l, r, t, b: x, y (0, 0 when it fits or isn't clamped).
+local function ClampPush(c, l, r, t, b)
+	if c.IsClampedToScreen and not c:IsClampedToScreen() then return 0, 0 end
+	local u = UIParent
+	local ue = u and u.GetEffectiveScale and u:GetEffectiveScale()
+	local W, H = u and u:GetRight(), u and u:GetTop()
+	if not (ue and W and H) then return 0, 0 end
+	W, H = W * ue, H * ue
+	local px, py = 0, 0
+	if r > W then px = W - r end
+	if l + px < 0 then px = -l end
+	if t > H then py = H - t end
+	if b + py < 0 then py = -b end
+	return px, py
+end
+
 -- /mmap selftest: is the cluster where Edit Mode saved it? Read only. Returns the state
 -- ("same", "pushed", "other", "default", "none", "editmode"), how far the anchor's offsets moved
--- (cluster units) and how far the real spot on screen is from the saved one (screen units, nil
--- when a rect can't be read).
+-- (cluster units), how far the real spot on screen is from the saved one after the screen clamp
+-- (screen units, nil when a rect can't be read) and how far the clamp holds it in from the saved
+-- spot (screen units; by design when the map + bar would stick out past the screen edge).
 function Square.PlaceCheck()
 	local c = MinimapCluster
 	if not Usable(c) then return "none" end
@@ -694,15 +713,25 @@ function Square.PlaceCheck()
 	local state, moved = CompareAnchor(c, a, a2, scale)
 	if state == "other" then return "other", moved end
 	local cs = c:GetEffectiveScale() or 1
-	local off = 0
-	for _, x in ipairs({ a, a2 or nil }) do
-		local cx, cy = PointXY(c, x.point)
-		local rx, ry = PointXY(RelFrame(x), x.relativePoint)
-		if not (cx and rx) then return state, moved or 0, nil end
-		local ex, ey = rx + x.offsetX / scale * cs, ry + x.offsetY / scale * cs
-		off = math.max(off, math.abs(cx - ex), math.abs(cy - ey))
+	-- The saved spot (first anchor), then the clamp the game puts on it with today's insets.
+	local cx, cy = PointXY(c, a.point)
+	local rx, ry = PointXY(RelFrame(a), a.relativePoint)
+	local l, r, t, b = c:GetLeft(), c:GetRight(), c:GetTop(), c:GetBottom()
+	if not (cx and rx and l and r and t and b) then return state, moved or 0, nil end
+	local dx = rx + a.offsetX / scale * cs - cx
+	local dy = ry + a.offsetY / scale * cs - cy
+	local iL, iR, iT, iB = 0, 0, 0, 0
+	if c.GetClampRectInsets then iL, iR, iT, iB = c:GetClampRectInsets() end
+	local px, py = ClampPush(c, l * cs + dx + (iL or 0) * cs, r * cs + dx + (iR or 0) * cs,
+		t * cs + dy + (iT or 0) * cs, b * cs + dy + (iB or 0) * cs)
+	local off = math.max(math.abs(dx + px), math.abs(dy + py))
+	if a2 then
+		local cx2, cy2 = PointXY(c, a2.point)
+		local rx2, ry2 = PointXY(RelFrame(a2), a2.relativePoint)
+		if not (cx2 and rx2) then return state, moved or 0, nil end
+		off = math.max(off, math.abs(rx2 + a2.offsetX / scale * cs + px - cx2), math.abs(ry2 + a2.offsetY / scale * cs + py - cy2))
 	end
-	return state, moved or 0, off
+	return state, moved or 0, off, math.max(math.abs(px), math.abs(py))
 end
 
 local function ClampChanged(old, new)
@@ -713,8 +742,91 @@ local function ClampChanged(old, new)
 	return false
 end
 
+---------------------------------------------------------------------------
+-- Header Underneath keeps the block's top edge: Blizzard's SetHeaderUnderneath(true) moves
+-- MinimapContainer from TOP 10,-30 to BOTTOM 10,30 (30 px up in the cluster) and our icon bar goes
+-- above the map, so the top edge of the whole block rose and slid under bars at the screen top
+-- (and the clamp held it in, the "Map spot 23 px" self-test FAIL). With it on, the container is
+-- anchored to its stand-in (Blizzard's own spot, which keeps the cluster's size Blizzard's) so the
+-- block's top edge is where it is with the header on top: bar top = header top. Plain
+-- ClearAllPoints/SetPoint out of combat, never while Edit Mode is open (re-run on ExitEditMode);
+-- with it off Blizzard's own spot stays (only our own move is undone). Edit Mode's anchor is never
+-- touched.
+---------------------------------------------------------------------------
+local OFF_TOP = -30 -- Blizzard's container top below the cluster's top, header on top (Minimap.xml), cluster units
+
+-- The container's TOP offset from its stand-in's TOP (container units), or nil. Read only.
+local function ContainerWant()
+	local c, cont = MinimapCluster, Container()
+	local s = cont and standIns[cont]
+	if not (s and Usable(c) and Usable(cont)) then return end
+	local _, _, bt, bb = ScreenRect(Square.border)
+	local _, _, _, hb = ScreenRect(Square.header)
+	local kt, st = c:GetTop(), s:GetTop()
+	if not (bt and hb and kt and st) then return end
+	local top = bt
+	local _, _, at = ScreenRect(ns.IconBar and ns.IconBar.frame)
+	if at and at > top then top = at end
+	local ce, se, ne = c:GetEffectiveScale(), s:GetEffectiveScale(), cont:GetEffectiveScale()
+	if not (ce and ce > 0 and se and ne and ne > 0) then return end
+	-- The header's reach below the map now = its reach above the map with the header on top.
+	local headUp, up = bb - hb, top - bt
+	local want = kt * ce + (Square.containerTop or OFF_TOP) * ce - (up - headUp)
+	return (want - st * se) / ne, s
+end
+
+function Square:PlaceContainer()
+	if not self.active or InCombatLockdown() or InEditMode() then return end
+	local c, cont = MinimapCluster, Container()
+	if not (Usable(c) and Usable(cont) and cont:GetParent() == c) then return end
+	local s = standIns[cont]
+	local u = self.under
+	if u == nil then u = Square.HeaderIsUnderneath() end
+	local _, rel = cont:GetPoint(1)
+	if not u then
+		self.containerShift = nil
+		if s and rel == s then -- our move is left over: back on Blizzard's spot
+			cont:ClearAllPoints()
+			cont:SetPoint("TOP", s, "TOP", 0, 0)
+			return
+		end
+		-- Blizzard's own spot: how far below the cluster's top it sits (cluster units).
+		local ct, kt, ce = cont:GetTop(), c:GetTop(), c:GetEffectiveScale()
+		if ct and kt and ce and ce > 0 then
+			local v = (ct * cont:GetEffectiveScale() - kt * ce) / ce
+			if math.abs(v) < 200 then self.containerTop = v end
+		end
+		return
+	end
+	local dy = ContainerWant()
+	if not dy then return end
+	local p, r2, rp, x, y = cont:GetPoint(1)
+	if cont:GetNumPoints() == 1 and p == "TOP" and r2 == s and rp == "TOP" and x == 0 and y and math.abs(y - dy) < 0.05 then
+		return
+	end
+	cont:ClearAllPoints()
+	cont:SetPoint("TOP", s, "TOP", 0, dy)
+	self.containerShift = dy
+end
+
+-- /mmap selftest: with Header Underneath on, how far the container is from the spot that keeps
+-- the block's top edge (screen units), or nil (off, Edit Mode open, nothing to read). Read only.
+function Square.ContainerCheck()
+	local cont = Container()
+	if not (Square.active and Usable(cont)) or InEditMode() then return end
+	local u = Square.under
+	if u == nil then u = Square.HeaderIsUnderneath() end
+	if not u then return end
+	local dy, s = ContainerWant()
+	local ct = cont:GetTop()
+	if not (dy and ct) then return end
+	local ne = cont:GetEffectiveScale()
+	return math.abs(ct * ne - (s:GetTop() * s:GetEffectiveScale() + dy * ne))
+end
+
 function Square:FitSelection()
 	if not self.active then return end
+	ns.SafeRun("MapTop", self.PlaceContainer, self)
 	local oldClamp = self.fit and self.fit.clamp
 	local c = MinimapCluster
 	local sel = c and c.Selection
@@ -838,6 +950,8 @@ function Square:PlacePieces(under, copy)
 		if u == nil then u = Square.HeaderIsUnderneath() end
 		self.copying = self.copyPending and true or false
 		self.copyPending = false
+		-- The container only moves in PlaceContainer (QueueFit), from this stand-in.
+		ns.SafeRun("MapTop", StandIn, Container())
 		ns.SafeRun("Header", self.PlaceHeader, self, u)
 		ns.SafeRun("Corners", self.PlaceCorners, self, u)
 		ns.SafeRun("Zoom", self.PlaceZoom, self)
@@ -1076,6 +1190,7 @@ function Square:InstallHooks()
 		if type(em.ExitEditMode) == "function" then
 			hooksecurefunc(em, "ExitEditMode", function()
 				ns.RunOutOfCombat("mouse-guard", function() ns.SafeRun("MouseGuard", Square.GuardMouse, Square) end)
+				Square:QueueFit() -- Header Underneath top edge (skipped while Edit Mode was open)
 			end)
 		end
 	end

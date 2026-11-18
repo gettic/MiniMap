@@ -82,14 +82,25 @@ end
 -- name depends on the state, the name; nil status = no line (e.g. the other addon isn't loaded).
 ---------------------------------------------------------------------------
 local function CheckSpot()
-	local state, moved, off = ns.Square.PlaceCheck()
+	local state, moved, off, held = ns.Square.PlaceCheck()
 	if state == "default" then return "SKIP", L.ST_SPOT_DEFAULT end
 	if state == "other" then return "SKIP", L.ST_SPOT_OTHER end
 	if state ~= "same" and state ~= "pushed" then return "SKIP", L.ST_SPOT_NONE end
 	if state == "pushed" or (off and off > TOL) then
 		return "FAIL", L.ST_SPOT_FAR:format(off or moved or 0)
 	end
+	-- The screen clamp keeps the map + bar on screen: by design, not a move.
+	if held and held > TOL then return "PASS", L.ST_SPOT_HELD:format(held) end
 	return "PASS", L.ST_SPOT_OK
+end
+
+-- Header Underneath: the block's top edge stays where it is with the header on top.
+local function CheckTop()
+	if not Under() then return "SKIP", L.ST_TOP_OFF end
+	local d = ns.Square.ContainerCheck()
+	if not d then return "SKIP", L.ST_TOP_NONE end
+	if d > TOL then return "FAIL", L.ST_TOP_BAD:format(d) end
+	return "PASS", L.ST_TOP_OK
 end
 
 local function CheckBox()
@@ -324,6 +335,7 @@ end
 local CHECKS = {
 	{ L.ST_N_SPOT, CheckSpot, map = true },
 	{ L.ST_N_BOX, CheckBox, map = true },
+	{ L.ST_N_TOP, CheckTop, map = true },
 	{ L.ST_N_HEADER_ABOVE, CheckHeader, map = true },
 	{ L.ST_N_SIDE, CheckSide, map = true },
 	{ L.ST_N_MOUSE, CheckMouse, map = true },

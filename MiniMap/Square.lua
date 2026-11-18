@@ -861,6 +861,14 @@ function Square:PlaceContainer()
 	self.containerShift = dy
 end
 
+-- Right now (same frame), out of combat: after Blizzard re-sizes (Layout) or re-anchors the cluster.
+function Square:PlaceContainerNow()
+	if not self.active then return end
+	ns.RunOutOfCombat("square-container", function()
+		ns.SafeRun("MapTop", Square.PlaceContainer, Square)
+	end)
+end
+
 -- /mmap selftest: with Header Underneath on, how far the block's top edge is from where it is
 -- with the header on top (screen units), or nil (off, Edit Mode open, not measured yet). Read only.
 function Square.ContainerCheck()
@@ -1007,6 +1015,11 @@ function Square:PlacePieces(under, copy)
 		ns.SafeRun("Zoom", self.PlaceZoom, self)
 		ns.SafeRun("DayNight", self.PlaceDiel, self, u)
 		self.copying = false
+		-- The container now, in the same frame as Blizzard's move (no one-frame jump); the bar's
+		-- side first, so its top is measured where it will be. QueueFit stays as the backup.
+		local Bar = ns.IconBar
+		if Bar and Bar.SetSide then ns.SafeRun("BarSide", Bar.SetSide, Bar, u) end
+		ns.SafeRun("MapTop", self.PlaceContainer, self)
 		ns.SafeRun("Layer", self.ApplyLayer, self)
 		self:QueueFit()
 	end)
@@ -1263,6 +1276,11 @@ function Square:InstallHooks()
 	elseif MinimapCluster.Selection and MinimapCluster.Selection.HookScript then
 		MinimapCluster.Selection:HookScript("OnDragStop", function() Square:QueueFit() end)
 	end
+	-- Blizzard's re-layout (ResizeLayoutFrame:Layout, after a toggle or size change): the container
+	-- right away, so the map doesn't show one frame out of place.
+	if type(MinimapCluster.Layout) == "function" then
+		hooksecurefunc(MinimapCluster, "Layout", function() Square:PlaceContainerNow() end)
+	end
 	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.
 	if MinimapCluster.HookScript then
 		MinimapCluster:HookScript("OnSizeChanged", function() Square:QueueFit() end)
@@ -1273,7 +1291,10 @@ function Square:InstallHooks()
 			hooksecurefunc(MinimapCluster, method, function()
 				ns.SafeRun("EditModeBox", Square.ApplyClamp, Square)
 				Square:QueueFit()
-				if method == "ApplySystemAnchor" then Square:KeepPlaceSoon("re-anchor") end
+				if method == "ApplySystemAnchor" then
+					Square:PlaceContainerNow()
+					Square:KeepPlaceSoon("re-anchor")
+				end
 			end)
 		end
 	end

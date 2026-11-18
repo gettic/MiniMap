@@ -468,6 +468,11 @@ local function InstallHook()
 	return true
 end
 
+-- /mmap selftest: hook installed, fix running, switched off after an error. Read only.
+function Zygor.State()
+	return hooked, Zygor.enabled and true or false, failed
+end
+
 -- Safe to call again (PLAYER_LOGIN, Zygor's ADDON_LOADED, /mmap zygoron|zygoroff).
 function Zygor:Setup()
 	self.enabled = Zygor.ShouldRun()

@@ -639,6 +639,11 @@ function Bar:SetSide(under)
 	ns.Square:QueueFit()
 end
 
+-- /mmap selftest: number of collected buttons and whether the header is underneath. Read only.
+function Bar.State()
+	return #collected, headerUnder
+end
+
 ---------------------------------------------------------------------------
 -- Set-up
 ---------------------------------------------------------------------------

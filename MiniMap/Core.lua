@@ -511,6 +511,9 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
 	elseif cmd == "art" then
 		PrintArt()
+	elseif cmd == "selftest" and ns.SelfTest then
+		local ok = pcall(ns.SelfTest.Start, ns.SelfTest)
+		if not ok then ns.Print(L.DEBUG_UNREADABLE) end
 	elseif cmd == "rescan" and ns.IconBar.active then
 		if InCombatLockdown() then
 			ns.Print(L.RESCAN_COMBAT)
@@ -536,6 +539,7 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Print(L.HELP_5)
 		ns.Print(L.HELP_ART)
 		ns.Print(L.HELP_MOUSE)
+		ns.Print(L.HELP_SELFTEST)
 		ns.Print(L.HELP_6)
 		if ns.Zygor.IsZygorLoaded() then ns.Print(L.HELP_7) end
 	end

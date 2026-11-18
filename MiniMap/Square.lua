@@ -151,6 +151,11 @@ function Square:CreateCoordsBox()
 	coords:HookScript("OnHide", CoordsHidden)
 end
 
+-- /mmap selftest: whether the box switched itself off after an error, the box, the coords frame.
+function Square.CoordsState()
+	return boxBroken, Square.coordsBox, Square.coordsFrame
+end
+
 ---------------------------------------------------------------------------
 -- Header strip, mail/compartment corners, day/night disc
 -- Only Blizzard's child pieces are moved (ZoneTextButton, IndicatorFrame,
@@ -660,6 +665,46 @@ function Square.PlaceDebug()
 	return map, saved, clamp, PointText(BuffFrame), tostring(Square.placeFixes or 0), Square.placeLast or "-"
 end
 
+-- Screen x, y of one anchor point of a frame (LEFT/RIGHT/TOP/BOTTOM/CENTER combinations), or nil.
+local function PointXY(f, point)
+	if not (f and f.GetLeft and f.GetEffectiveScale) then return end
+	local l, r, t, b = f:GetLeft(), f:GetRight(), f:GetTop(), f:GetBottom()
+	if not (l and r and t and b) then return end
+	local s = f:GetEffectiveScale() or 1
+	local x = (point:find("LEFT") and l) or (point:find("RIGHT") and r) or (l + r) / 2
+	local y = (point:find("TOP") and t) or (point:find("BOTTOM") and b) or (t + b) / 2
+	return x * s, y * s
+end
+
+-- /mmap selftest: is the cluster where Edit Mode saved it? Read only. Returns the state
+-- ("same", "pushed", "other", "default", "none", "editmode"), how far the anchor's offsets moved
+-- (cluster units) and how far the real spot on screen is from the saved one (screen units, nil
+-- when a rect can't be read).
+function Square.PlaceCheck()
+	local c = MinimapCluster
+	if not Usable(c) then return "none" end
+	if InEditMode() then return "editmode" end
+	local info = c.systemInfo
+	if type(info) ~= "table" then return "none" end
+	if info.isInDefaultPosition then return "default" end
+	local a, a2 = SavedAnchor(c)
+	if not a then return "none" end
+	local scale = c:GetScale()
+	if not (scale and scale > 0) then return "none" end
+	local state, moved = CompareAnchor(c, a, a2, scale)
+	if state == "other" then return "other", moved end
+	local cs = c:GetEffectiveScale() or 1
+	local off = 0
+	for _, x in ipairs({ a, a2 or nil }) do
+		local cx, cy = PointXY(c, x.point)
+		local rx, ry = PointXY(RelFrame(x), x.relativePoint)
+		if not (cx and rx) then return state, moved or 0, nil end
+		local ex, ey = rx + x.offsetX / scale * cs, ry + x.offsetY / scale * cs
+		off = math.max(off, math.abs(cx - ex), math.abs(cy - ey))
+	end
+	return state, moved or 0, off
+end
+
 local function ClampChanged(old, new)
 	if not (old and new) then return old ~= new end
 	for i = 1, 4 do
@@ -950,8 +995,23 @@ function Square:GuardMouse()
 			fixes["Minimap hit area reset"] = true
 		end
 	end
+	-- 2. and 3.: the frames MouseBlockers lists lose the mouse.
+	for _, b in ipairs(Square.MouseBlockers()) do
+		b.frame:EnableMouse(false)
+		if b.holder then holdersOff[b.frame] = true end
+		fixes[b.key] = true
+	end
+end
+
+-- The frames that catch the Minimap's mouse (what GuardMouse turns off), as a list of
+-- { frame, key (text for /mmap debug), holder (true for a frame the map sits in) }.
+-- Changes nothing (also used by /mmap selftest).
+function Square.MouseBlockers()
+	local found, seen = {}, {}
+	local m = Minimap
+	if not Usable(m) then return found end
 	local ml, mr, mt, mb = Rect(m)
-	if not (ml and mr > ml and mt > mb) then return end
+	if not (ml and mr > ml and mt > mb) then return found end
 	-- 2. Frames the Minimap sits in (MinimapContainer, MinimapCluster): one that takes the mouse
 	-- and is above the map (higher strata, or same strata at its level or higher) catches every
 	-- click and hover on it. The layer keeps the map low on purpose, so the holder's mouse goes
@@ -962,9 +1022,8 @@ function Square:GuardMouse()
 	while p and p ~= UIParent and depth < 5 do
 		if not (p.IsForbidden and p:IsForbidden()) and p.EnableMouse and p.GetFrameLevel
 			and MouseOn(p) and Above(p, m) then
-			p:EnableMouse(false)
-			holdersOff[p] = true
-			fixes["mouse off: " .. (p:GetName() or "map holder")] = true
+			seen[p] = true
+			found[#found + 1] = { frame = p, holder = true, key = "mouse off: " .. (p:GetName() or "map holder") }
 		end
 		p, depth = p:GetParent(), depth + 1
 	end
@@ -979,16 +1038,17 @@ function Square:GuardMouse()
 	local sel = c and c.Selection
 	for i = 1, #list do
 		local f = list[i]
-		if f and f ~= m and f ~= sel and f ~= HybridMinimap and not IsUnder(m, f) and Usable(f) and f.EnableMouse
+		if f and not seen[f] and f ~= m and f ~= sel and f ~= HybridMinimap and not IsUnder(m, f) and Usable(f) and f.EnableMouse
 			and f.IsVisible and f:IsVisible() and MouseOn(f)
 			and not (bar and IsUnder(f, bar))
 			and CoverShare(f, ml, mr, mt, mb) >= 0.5 then
 			if Above(f, m) then
-				f:EnableMouse(false)
-				fixes["mouse off: " .. (f:GetName() or ((f.GetObjectType and f:GetObjectType() or "frame") .. " in " .. ((f:GetParent() and f:GetParent():GetName()) or "?")))] = true
+				seen[f] = true
+				found[#found + 1] = { frame = f, key = "mouse off: " .. (f:GetName() or ((f.GetObjectType and f:GetObjectType() or "frame") .. " in " .. ((f:GetParent() and f:GetParent():GetName()) or "?"))) }
 			end
 		end
 	end
+	return found
 end
 
 -- Put the layer back if Blizzard or another addon changes it (once, not while we set it).

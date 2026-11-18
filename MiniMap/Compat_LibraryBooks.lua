@@ -106,6 +106,14 @@ function Books.ShouldRun()
 		and ns.IsLoaded(BOOKS_ADDON) and true or false
 end
 
+-- /mmap selftest: watcher running, number of hooked pins, switched off after an error. Read only.
+function Books.State()
+	local n = 0
+	for _ in pairs(hooked) do n = n + 1 end
+	local running = scanner and scanner:GetScript("OnUpdate") ~= nil or false
+	return running, n, failed
+end
+
 -- Starts or stops the watcher to match the setting; safe to call again.
 function Books:Setup()
 	self.enabled = Books.ShouldRun()

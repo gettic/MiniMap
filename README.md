@@ -67,6 +67,7 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | `/mmap art` | Lists which border and header button art this game has and says the action bar art is switched off. Include it in a bug report about the border. |
 | `/mmap mouse` | Live mouse check for 30 seconds (type it again to stop). Move the mouse onto the minimap and off again. Each time what is under the mouse changes, it prints what that is, whether the minimap sees the mouse, and where the mouse and the minimap are. Include it in a bug report about clicks or tooltips. |
 | `/mmap debug` | Hold the mouse over the spot where a minimap tooltip is missing and type it. Prints the tooltip's lines, the map's shape, the frames under the mouse, the minimap's click and hover state, whether the minimap's tooltip is running, a "Map position" line (position, size and scale), a "Border art" line, a "Header" line (screen positions of the strip, tracking button, zone plate and calendar, and the space left and right), a "Place:" line (the map's anchor, Edit Mode's saved anchor, the clamp, the buffs' anchor, and how often the map was moved back), and a "Mouse fixes by Mini Map" line. Include it in a bug report about tooltips, pings or the map's shape. |
+| `/mmap selftest` | Mini Map checks itself (map position, header centring, mouse over the map, zoom buttons, border, coordinates box, button bar, and the Zygor and Library Books parts) and prints PASS, FAIL or SKIP for each check, then one result line. The same text opens in a small box: press Ctrl+C to copy it and send it with a bug report. It changes nothing. In combat it waits until combat ends. If Edit Mode is open, it asks you to close it and type the command again. |
 
 Mini Map already looks for new buttons a few times after login and when another addon loads, so you rarely need `/mmap rescan`.
 
@@ -111,6 +112,7 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Core.lua` | Start-up, saved settings, combat queue, other-addon check, `/mmap`. |
 | `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
 | `IconBar.lua` | Finding minimap buttons and laying out the bar. |
+| `SelfTest.lua` | `/mmap selftest`: read-only checks and the copy box. |
 | `Compat_LibraryBooks.lua` | Moves Library Books' far-away pins onto the square's edge. |
 | `Compat_Zygor.lua` | Lengthens Zygor's "Solid lines" minimap path to the square's edge. |
 

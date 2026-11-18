@@ -823,20 +823,30 @@ end
 
 -- In the hooks (same frame as Blizzard's SetPoint / Layout) the screen rects of frames moved this
 -- frame can still be last frame's: measuring there put the map one frame too high (beta.2 flicker).
--- So the hooks use the offset the last fresh measurement found for the same layout (anchor kind,
--- map / header / bar size, saved top edge: all read without rects), kept in ns.db.topShift.
+-- So the hooks use the offset the last fresh measurement found for the same layout, kept in
+-- ns.db.topShift. The key holds only what can't change during a toggle, in whole pixels: anchor
+-- kind, map size and bar height (beta.3: a key with the re-measured top edge differed after every
+-- off/on, so the hooks always waited). A small change the key misses is fixed by the next fit.
 local function ShiftKey(c)
-	local e = ns.db and ns.db.topEdge
-	if not ValidEdge(e) or c:GetNumPoints() < 1 then return end
+	if c:GetNumPoints() < 1 then return end
 	local p = c:GetPoint(1)
 	local ce = c:GetEffectiveScale()
 	if type(p) ~= "string" or not (ce and ce > 0) then return end
 	local kind = p:find("TOP") and "top" or p:find("BOTTOM") and "bottom" or "center"
-	local map, head = EdgeKey(ce)
+	local map = EdgeKey(ce)
 	if not map then return end
 	local bar = ns.IconBar and ns.IconBar.frame
 	local bh = (bar and bar:IsShown() and bar:GetHeight()) and bar:GetHeight() * bar:GetEffectiveScale() / ce or 0
-	return string.format("%s %.1f %.1f %.1f %.1f %.1f", kind, e[kind], map, head, bh, e.map)
+	return string.format("%s %d %d", kind, math.floor(map + 0.5), math.floor(bh + 0.5))
+end
+
+-- Last 4 container moves / waits for /mmap debug ("layout kept -47.2", "toggle waits (key)").
+local function TopLog(text)
+	local log = Square.topLog or {}
+	Square.topLog = log
+	log[#log + 1] = text
+	while #log > 4 do table.remove(log, 1) end
+	Square.topLast = text
 end
 
 local function ValidShift(t)
@@ -859,7 +869,7 @@ function Square:PlaceContainer(why)
 			if c.isDragging then return end
 			cont:ClearAllPoints()
 			cont:SetPoint("TOP", s, "TOP", 0, 0)
-			self.topLast = (why or "fit") .. " back"
+			TopLog((why or "fit") .. " back")
 			return
 		end
 		-- Read only (also while Edit Mode is open: the spot before a toggle); fresh rects only.
@@ -874,7 +884,8 @@ function Square:PlaceContainer(why)
 	local kept = ns.db and ns.db.topShift
 	if why then
 		if not (key and ValidShift(kept) and kept.key == key) then
-			self.topLast = why .. " waits (no kept offset)"
+			TopLog(string.format("%s waits (key %s, kept %s)", why, tostring(key),
+				ValidShift(kept) and kept.key or "none"))
 			return -- the next frame's FitSelection measures
 		end
 		dy = kept.dy
@@ -891,19 +902,23 @@ function Square:PlaceContainer(why)
 	end
 	local p, r2, rp, x, y = cont:GetPoint(1)
 	if cont:GetNumPoints() == 1 and p == "TOP" and r2 == s and rp == "TOP" and x == 0 and y and math.abs(y - dy) < 0.05 then
+		if why then TopLog(string.format("%s kept %.1f (already there)", why, dy)) end
 		return
 	end
+	local was = (r2 == s and type(y) == "number") and string.format("%.1f", y) or "Blizzard's"
 	cont:ClearAllPoints()
 	cont:SetPoint("TOP", s, "TOP", 0, dy)
 	self.containerShift = dy
-	self.topLast = string.format("%s %.1f", why or "fit", dy)
+	TopLog(string.format("%s %s %.1f (was %s)", why or "fit", why and "kept" or "measured", dy, was))
 end
 
--- /mmap debug "Map top:" line: Header Underneath, is Layout hookable, kept offset, last move.
+-- /mmap debug "Map top:" line: Header Underneath, is Layout hookable, kept offset + key, last 4 moves.
 function Square.TopDebug()
 	local kept = ns.db and ns.db.topShift
+	local log = Square.topLog
 	return tostring(Square.under), tostring(Square.layoutHooked or false),
-		ValidShift(kept) and string.format("%.1f", kept.dy) or "-", Square.topLast or "-"
+		ValidShift(kept) and string.format("%.1f [%s]", kept.dy, kept.key) or "-",
+		log and #log > 0 and table.concat(log, " / ") or "-"
 end
 
 -- Right now (same frame), out of combat: after Blizzard re-sizes (Layout) or re-anchors the cluster.

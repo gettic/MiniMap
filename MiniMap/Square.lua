@@ -753,9 +753,10 @@ end
 -- point (which Edit Mode keeps on the same screen spot in both settings; ns.db.topEdge, so it lasts
 -- through /reload). With it on, the container is anchored to its stand-in (Blizzard's own spot,
 -- which keeps the cluster's size Blizzard's) and shifted so the block's top edge (bar or map) is at
--- that same distance again. Plain ClearAllPoints/SetPoint out of combat, never while Edit Mode is
--- open (re-run on ExitEditMode); with it off Blizzard's own spot stays (only our own move is
--- undone). Edit Mode's anchor is never touched.
+-- that same distance again. Plain ClearAllPoints/SetPoint on the container only, out of combat,
+-- also while Edit Mode is open (so the kept top shows right after a toggle or Save) but never
+-- while the map is dragged (isDragging, read only; re-fit on drag end); with it off Blizzard's own
+-- spot stays (only our own move is undone). Edit Mode's anchor and the cluster are never touched.
 ---------------------------------------------------------------------------
 -- Screen y of the cluster's anchor point (the point Edit Mode holds still), its kind, or nil.
 local function AnchorY(c)
@@ -831,7 +832,7 @@ function Square:PlaceContainer()
 	if not u then
 		self.containerShift = nil
 		if s and rel == s then -- our move is left over: back on Blizzard's spot
-			if InEditMode() then return end
+			if c.isDragging then return end
 			cont:ClearAllPoints()
 			cont:SetPoint("TOP", s, "TOP", 0, 0)
 			return
@@ -839,7 +840,9 @@ function Square:PlaceContainer()
 		NoteEdge(c) -- read only (also while Edit Mode is open: the spot before a toggle)
 		return
 	end
-	if InEditMode() or not s then return end
+	-- Also while Edit Mode is open (the kept top shows right after a toggle or Save), but never
+	-- mid-drag (isDragging: read only); the drag-end hook re-fits.
+	if c.isDragging or not s then return end
 	local want, now = EdgeWant(c)
 	local ct, st = cont:GetTop(), s:GetTop()
 	local ne, se = cont:GetEffectiveScale(), s:GetEffectiveScale()
@@ -1253,6 +1256,12 @@ function Square:InstallHooks()
 	end
 	if MinimapCluster.SetEditModeScale then
 		hooksecurefunc(MinimapCluster, "SetEditModeScale", function() Square:PlacePieces(nil, true) end)
+	end
+	-- Edit Mode drag ended: the container move skipped mid-drag (Header Underneath top edge).
+	if type(MinimapCluster.OnDragStop) == "function" then
+		hooksecurefunc(MinimapCluster, "OnDragStop", function() Square:QueueFit() end)
+	elseif MinimapCluster.Selection and MinimapCluster.Selection.HookScript then
+		MinimapCluster.Selection:HookScript("OnDragStop", function() Square:QueueFit() end)
 	end
 	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.
 	if MinimapCluster.HookScript then

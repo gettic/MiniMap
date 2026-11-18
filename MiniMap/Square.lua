@@ -746,37 +746,82 @@ end
 -- Header Underneath keeps the block's top edge: Blizzard's SetHeaderUnderneath(true) moves
 -- MinimapContainer from TOP 10,-30 to BOTTOM 10,30 (30 px up in the cluster) and our icon bar goes
 -- above the map, so the top edge of the whole block rose and slid under bars at the screen top
--- (and the clamp held it in, the "Map spot 23 px" self-test FAIL). With it on, the container is
--- anchored to its stand-in (Blizzard's own spot, which keeps the cluster's size Blizzard's) so the
--- block's top edge is where it is with the header on top: bar top = header top. Plain
--- ClearAllPoints/SetPoint out of combat, never while Edit Mode is open (re-run on ExitEditMode);
--- with it off Blizzard's own spot stays (only our own move is undone). Edit Mode's anchor is never
--- touched.
+-- (and the clamp held it in, the "Map spot 23 px" self-test FAIL). Blizzard also re-sizes the
+-- cluster (ResizeLayoutFrame), so where the block ends up depends on Edit Mode's anchor point
+-- (beta.13 assumed a TOP anchor and dropped a BOTTOM-anchored map too far). So it is measured:
+-- with the header on top, the block's top edge is noted as a distance from the cluster's anchor
+-- point (which Edit Mode keeps on the same screen spot in both settings; ns.db.topEdge, so it lasts
+-- through /reload). With it on, the container is anchored to its stand-in (Blizzard's own spot,
+-- which keeps the cluster's size Blizzard's) and shifted so the block's top edge (bar or map) is at
+-- that same distance again. Plain ClearAllPoints/SetPoint out of combat, never while Edit Mode is
+-- open (re-run on ExitEditMode); with it off Blizzard's own spot stays (only our own move is
+-- undone). Edit Mode's anchor is never touched.
 ---------------------------------------------------------------------------
-local OFF_TOP = -30 -- Blizzard's container top below the cluster's top, header on top (Minimap.xml), cluster units
+-- Screen y of the cluster's anchor point (the point Edit Mode holds still), its kind, or nil.
+local function AnchorY(c)
+	local p = c:GetNumPoints() > 0 and c:GetPoint(1)
+	local t, b = c:GetTop(), c:GetBottom()
+	local ce = c:GetEffectiveScale()
+	if not (type(p) == "string" and t and b and ce and ce > 0) then return end
+	local kind = p:find("TOP") and "top" or p:find("BOTTOM") and "bottom" or "center"
+	local y = (kind == "top" and t) or (kind == "bottom" and b) or (t + b) / 2
+	return y * ce, kind, ce
+end
 
--- The container's TOP offset from its stand-in's TOP (container units), or nil. Read only.
-local function ContainerWant()
-	local c, cont = MinimapCluster, Container()
-	local s = cont and standIns[cont]
-	if not (s and Usable(c) and Usable(cont)) then return end
-	local _, _, bt, bb = ScreenRect(Square.border)
-	local _, _, _, hb = ScreenRect(Square.header)
-	local kt, st = c:GetTop(), s:GetTop()
-	if not (bt and hb and kt and st) then return end
-	local top = bt
+-- What the top-edge distance depends on (map and header size, cluster units).
+local function EdgeKey(ce)
+	local mh, me = Minimap:GetHeight(), Minimap:GetEffectiveScale()
+	local h = Square.header
+	local hh, he = h and h:GetHeight(), h and h:GetEffectiveScale()
+	if not (mh and me and hh and he) then return end
+	return mh * me / ce, hh * he / ce
+end
+
+local function ValidEdge(e)
+	if type(e) ~= "table" then return false end
+	for _, k in ipairs({ "top", "bottom", "center", "map", "head" }) do
+		local v = e[k]
+		if type(v) ~= "number" or v ~= v or math.abs(v) > 2000 then return false end
+	end
+	return true
+end
+
+-- Header on top (Blizzard's spot): note the block's top edge from each possible anchor point.
+local function NoteEdge(c)
+	local _, _, bt = ScreenRect(Square.border)
+	local _, _, ht = ScreenRect(Square.header)
+	local t, b, ce = c:GetTop(), c:GetBottom(), c:GetEffectiveScale()
+	if not (bt and ht and t and b and ce and ce > 0) or not ns.db then return end
+	local map, head = EdgeKey(ce)
+	if not map then return end
+	local top = math.max(bt, ht) / ce
+	local e = { top = top - t, bottom = top - b, center = top - (t + b) / 2, map = map, head = head }
+	local old = ns.db.topEdge
+	if ValidEdge(old) then
+		local same = true
+		for k, v in pairs(e) do if math.abs(v - old[k]) > 0.05 then same = false end end
+		if same then return end
+	end
+	ns.db.topEdge = e
+end
+
+-- Header Underneath on: screen y the block's top edge should have, and its top now. Read only.
+local function EdgeWant(c)
+	local e = ns.db and ns.db.topEdge
+	if not ValidEdge(e) then return end
+	local y, kind, ce = AnchorY(c)
+	if not y then return end
+	local map, head = EdgeKey(ce)
+	if not map or math.abs(map - e.map) > 0.5 or math.abs(head - e.head) > 0.5 then return end
+	local _, _, bt = ScreenRect(Square.border)
+	if not bt then return end
 	local _, _, at = ScreenRect(ns.IconBar and ns.IconBar.frame)
-	if at and at > top then top = at end
-	local ce, se, ne = c:GetEffectiveScale(), s:GetEffectiveScale(), cont:GetEffectiveScale()
-	if not (ce and ce > 0 and se and ne and ne > 0) then return end
-	-- The header's reach below the map now = its reach above the map with the header on top.
-	local headUp, up = bb - hb, top - bt
-	local want = kt * ce + (Square.containerTop or OFF_TOP) * ce - (up - headUp)
-	return (want - st * se) / ne, s
+	local now = (at and at > bt) and at or bt
+	return y + e[kind] * ce, now
 end
 
 function Square:PlaceContainer()
-	if not self.active or InCombatLockdown() or InEditMode() then return end
+	if not self.active or InCombatLockdown() then return end
 	local c, cont = MinimapCluster, Container()
 	if not (Usable(c) and Usable(cont) and cont:GetParent() == c) then return end
 	local s = standIns[cont]
@@ -786,20 +831,24 @@ function Square:PlaceContainer()
 	if not u then
 		self.containerShift = nil
 		if s and rel == s then -- our move is left over: back on Blizzard's spot
+			if InEditMode() then return end
 			cont:ClearAllPoints()
 			cont:SetPoint("TOP", s, "TOP", 0, 0)
 			return
 		end
-		-- Blizzard's own spot: how far below the cluster's top it sits (cluster units).
-		local ct, kt, ce = cont:GetTop(), c:GetTop(), c:GetEffectiveScale()
-		if ct and kt and ce and ce > 0 then
-			local v = (ct * cont:GetEffectiveScale() - kt * ce) / ce
-			if math.abs(v) < 200 then self.containerTop = v end
-		end
+		NoteEdge(c) -- read only (also while Edit Mode is open: the spot before a toggle)
 		return
 	end
-	local dy = ContainerWant()
-	if not dy then return end
+	if InEditMode() or not s then return end
+	local want, now = EdgeWant(c)
+	local ct, st = cont:GetTop(), s:GetTop()
+	local ne, se = cont:GetEffectiveScale(), s:GetEffectiveScale()
+	local dy
+	if want and ct and st and ne and ne > 0 then
+		dy = (ct * ne + (want - now) - st * se) / ne
+	else
+		dy = 0 -- not measured yet (or the map size changed): Blizzard's own spot
+	end
 	local p, r2, rp, x, y = cont:GetPoint(1)
 	if cont:GetNumPoints() == 1 and p == "TOP" and r2 == s and rp == "TOP" and x == 0 and y and math.abs(y - dy) < 0.05 then
 		return
@@ -809,19 +858,17 @@ function Square:PlaceContainer()
 	self.containerShift = dy
 end
 
--- /mmap selftest: with Header Underneath on, how far the container is from the spot that keeps
--- the block's top edge (screen units), or nil (off, Edit Mode open, nothing to read). Read only.
+-- /mmap selftest: with Header Underneath on, how far the block's top edge is from where it is
+-- with the header on top (screen units), or nil (off, Edit Mode open, not measured yet). Read only.
 function Square.ContainerCheck()
-	local cont = Container()
-	if not (Square.active and Usable(cont)) or InEditMode() then return end
+	local c = MinimapCluster
+	if not (Square.active and Usable(c)) or InEditMode() then return end
 	local u = Square.under
 	if u == nil then u = Square.HeaderIsUnderneath() end
 	if not u then return end
-	local dy, s = ContainerWant()
-	local ct = cont:GetTop()
-	if not (dy and ct) then return end
-	local ne = cont:GetEffectiveScale()
-	return math.abs(ct * ne - (s:GetTop() * s:GetEffectiveScale() + dy * ne))
+	local want, now = EdgeWant(c)
+	if not want then return end
+	return math.abs(want - now)
 end
 
 function Square:FitSelection()

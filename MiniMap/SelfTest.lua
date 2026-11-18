@@ -327,6 +327,7 @@ local function CheckDB()
 		if db[key] ~= nil and type(db[key]) ~= "boolean" then return "FAIL", L.ST_DB_BAD:format(key) end
 	end
 	if db.editFit ~= nil and type(db.editFit) ~= "table" then return "FAIL", L.ST_DB_BAD:format("editFit") end
+	if db.topEdge ~= nil and type(db.topEdge) ~= "table" then return "FAIL", L.ST_DB_BAD:format("topEdge") end
 	if db.dbVersion ~= nil and type(db.dbVersion) ~= "number" then return "FAIL", L.ST_DB_BAD:format("dbVersion") end
 	return "PASS", L.ST_DB_OK
 end

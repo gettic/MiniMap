@@ -821,7 +821,31 @@ local function EdgeWant(c)
 	return y + e[kind] * ce, now
 end
 
-function Square:PlaceContainer()
+-- In the hooks (same frame as Blizzard's SetPoint / Layout) the screen rects of frames moved this
+-- frame can still be last frame's: measuring there put the map one frame too high (beta.2 flicker).
+-- So the hooks use the offset the last fresh measurement found for the same layout (anchor kind,
+-- map / header / bar size, saved top edge: all read without rects), kept in ns.db.topShift.
+local function ShiftKey(c)
+	local e = ns.db and ns.db.topEdge
+	if not ValidEdge(e) or c:GetNumPoints() < 1 then return end
+	local p = c:GetPoint(1)
+	local ce = c:GetEffectiveScale()
+	if type(p) ~= "string" or not (ce and ce > 0) then return end
+	local kind = p:find("TOP") and "top" or p:find("BOTTOM") and "bottom" or "center"
+	local map, head = EdgeKey(ce)
+	if not map then return end
+	local bar = ns.IconBar and ns.IconBar.frame
+	local bh = (bar and bar:IsShown() and bar:GetHeight()) and bar:GetHeight() * bar:GetEffectiveScale() / ce or 0
+	return string.format("%s %.1f %.1f %.1f %.1f %.1f", kind, e[kind], map, head, bh, e.map)
+end
+
+local function ValidShift(t)
+	return type(t) == "table" and type(t.key) == "string" and type(t.dy) == "number" and t.dy == t.dy and math.abs(t.dy) < 2000
+end
+
+-- `why`: nil = a fresh measurement (FitSelection, the frame after a change); otherwise the hook
+-- name (same frame: only the kept offset, no rect reads). Last move kept for /mmap debug.
+function Square:PlaceContainer(why)
 	if not self.active or InCombatLockdown() then return end
 	local c, cont = MinimapCluster, Container()
 	if not (Usable(c) and Usable(cont) and cont:GetParent() == c) then return end
@@ -835,22 +859,35 @@ function Square:PlaceContainer()
 			if c.isDragging then return end
 			cont:ClearAllPoints()
 			cont:SetPoint("TOP", s, "TOP", 0, 0)
+			self.topLast = (why or "fit") .. " back"
 			return
 		end
-		NoteEdge(c) -- read only (also while Edit Mode is open: the spot before a toggle)
+		-- Read only (also while Edit Mode is open: the spot before a toggle); fresh rects only.
+		if not why then NoteEdge(c) end
 		return
 	end
 	-- Also while Edit Mode is open (the kept top shows right after a toggle or Save), but never
 	-- mid-drag (isDragging: read only); the drag-end hook re-fits.
 	if c.isDragging or not s then return end
-	local want, now = EdgeWant(c)
-	local ct, st = cont:GetTop(), s:GetTop()
-	local ne, se = cont:GetEffectiveScale(), s:GetEffectiveScale()
 	local dy
-	if want and ct and st and ne and ne > 0 then
-		dy = (ct * ne + (want - now) - st * se) / ne
+	local key = ShiftKey(c)
+	local kept = ns.db and ns.db.topShift
+	if why then
+		if not (key and ValidShift(kept) and kept.key == key) then
+			self.topLast = why .. " waits (no kept offset)"
+			return -- the next frame's FitSelection measures
+		end
+		dy = kept.dy
 	else
-		dy = 0 -- not measured yet (or the map size changed): Blizzard's own spot
+		local want, now = EdgeWant(c)
+		local ct, st = cont:GetTop(), s:GetTop()
+		local ne, se = cont:GetEffectiveScale(), s:GetEffectiveScale()
+		if want and ct and st and ne and ne > 0 then
+			dy = (ct * ne + (want - now) - st * se) / ne
+			if key and ns.db then ns.db.topShift = { key = key, dy = dy } end
+		else
+			dy = 0 -- not measured yet (or the map size changed): Blizzard's own spot
+		end
 	end
 	local p, r2, rp, x, y = cont:GetPoint(1)
 	if cont:GetNumPoints() == 1 and p == "TOP" and r2 == s and rp == "TOP" and x == 0 and y and math.abs(y - dy) < 0.05 then
@@ -859,13 +896,21 @@ function Square:PlaceContainer()
 	cont:ClearAllPoints()
 	cont:SetPoint("TOP", s, "TOP", 0, dy)
 	self.containerShift = dy
+	self.topLast = string.format("%s %.1f", why or "fit", dy)
+end
+
+-- /mmap debug "Map top:" line: Header Underneath, is Layout hookable, kept offset, last move.
+function Square.TopDebug()
+	local kept = ns.db and ns.db.topShift
+	return tostring(Square.under), tostring(Square.layoutHooked or false),
+		ValidShift(kept) and string.format("%.1f", kept.dy) or "-", Square.topLast or "-"
 end
 
 -- Right now (same frame), out of combat: after Blizzard re-sizes (Layout) or re-anchors the cluster.
-function Square:PlaceContainerNow()
+function Square:PlaceContainerNow(why)
 	if not self.active then return end
 	ns.RunOutOfCombat("square-container", function()
-		ns.SafeRun("MapTop", Square.PlaceContainer, Square)
+		ns.SafeRun("MapTop", Square.PlaceContainer, Square, why or "hook")
 	end)
 end
 
@@ -1019,7 +1064,7 @@ function Square:PlacePieces(under, copy)
 		-- side first, so its top is measured where it will be. QueueFit stays as the backup.
 		local Bar = ns.IconBar
 		if Bar and Bar.SetSide then ns.SafeRun("BarSide", Bar.SetSide, Bar, u) end
-		ns.SafeRun("MapTop", self.PlaceContainer, self)
+		ns.SafeRun("MapTop", self.PlaceContainer, self, "toggle")
 		ns.SafeRun("Layer", self.ApplyLayer, self)
 		self:QueueFit()
 	end)
@@ -1279,7 +1324,8 @@ function Square:InstallHooks()
 	-- Blizzard's re-layout (ResizeLayoutFrame:Layout, after a toggle or size change): the container
 	-- right away, so the map doesn't show one frame out of place.
 	if type(MinimapCluster.Layout) == "function" then
-		hooksecurefunc(MinimapCluster, "Layout", function() Square:PlaceContainerNow() end)
+		hooksecurefunc(MinimapCluster, "Layout", function() Square:PlaceContainerNow("layout") end)
+		self.layoutHooked = true
 	end
 	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.
 	if MinimapCluster.HookScript then
@@ -1292,7 +1338,7 @@ function Square:InstallHooks()
 				ns.SafeRun("EditModeBox", Square.ApplyClamp, Square)
 				Square:QueueFit()
 				if method == "ApplySystemAnchor" then
-					Square:PlaceContainerNow()
+					Square:PlaceContainerNow("anchor")
 					Square:KeepPlaceSoon("re-anchor")
 				end
 			end)

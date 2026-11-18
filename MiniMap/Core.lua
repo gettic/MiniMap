@@ -478,6 +478,10 @@ local function PrintDebug()
 		local ok, map, saved, clamp, buffs, n, last = pcall(ns.Square.PlaceDebug)
 		if ok then ns.Print(L.DEBUG_PLACE, map, saved, clamp, buffs, n, last) end
 	end
+	if ns.Square and ns.Square.TopDebug then
+		local ok, under, hooked, kept, last = pcall(ns.Square.TopDebug)
+		if ok then ns.Print(L.DEBUG_TOP, under, hooked, kept, last) end
+	end
 	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end
 

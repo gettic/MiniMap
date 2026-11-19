@@ -837,60 +837,142 @@ local function ShiftKey(c)
 	if not map then return end
 	local bar = ns.IconBar and ns.IconBar.frame
 	local bh = (bar and bar:IsShown() and bar:GetHeight()) and bar:GetHeight() * bar:GetEffectiveScale() / ce or 0
-	return string.format("%s %d %d", kind, math.floor(map + 0.5), math.floor(bh + 0.5))
+	local mapR = math.floor(map + 0.5)
+	return string.format("%s %d %d", kind, mapR, math.floor(bh + 0.5)), kind, mapR, bh
 end
 
--- Last 4 container moves / waits for /mmap debug ("layout kept -47.2", "toggle waits (key)").
+-- Small per-key memory in ns.db (newest first, max 4), so a layout that comes back (another bar
+-- height, the other setting) still finds its kept value: with one slot, a fit in between replaced
+-- it and the next toggle's hooks waited = the one-frame jump "every 4th time" (beta.5).
+local KEEP_MAX = 4
+
+local function KeepPut(name, e)
+	if not ns.db then return end
+	local l = ns.db[name]
+	if type(l) ~= "table" then l = {}; ns.db[name] = l end
+	for i = #l, 1, -1 do
+		if type(l[i]) ~= "table" or l[i].key == e.key then table.remove(l, i) end
+	end
+	table.insert(l, 1, e)
+	while #l > KEEP_MAX do table.remove(l) end
+end
+
+local function KeepFind(name, valid, test)
+	local l = ns.db and ns.db[name]
+	if type(l) ~= "table" then return end
+	for _, e in ipairs(l) do
+		if valid(e) and test(e) then return e end
+	end
+end
+
+-- Last 6 container moves / waits for /mmap debug ("layout kept -47.2", "toggle waits (key)").
 local function TopLog(text)
 	local log = Square.topLog or {}
 	Square.topLog = log
 	log[#log + 1] = text
-	while #log > 4 do table.remove(log, 1) end
+	while #log > 6 do table.remove(log, 1) end
 	Square.topLast = text
 end
 
--- /mmap debug "Toggle frames:" (read only): at each step of the last Header Underneath toggle and the
--- 4 frames after it, the cluster's anchor y (a clamp push shows here), the clamp's top inset and, where
--- rects are read, the cluster's and the block's screen top. Steps: set (SetHeaderUnderneath), L> / L<
--- (Layout hook before / after our work), fit (FitSelection), f1-f4 (next frames). Max 12 entries.
-local function TraceAdd(tag, rects)
-	local tr = Square.toggleTrace
-	if not (Square.tracing and tr) or #tr >= 12 then return end
+-- /mmap debug "Toggle frames:" + "Toggle watch:" (read only). At each step of the last Header
+-- Underneath toggle and the 6 frames after it: y = the cluster's anchor y (a clamp push shows here),
+-- i = clamp top inset, c = cluster screen top, m = Minimap screen top, b = block screen top, k = the
+-- container's anchor (s = on our stand-in, c = on the cluster) + its y. Steps: pre (Edit Mode's
+-- AnchorSelectionFrame just before, same frame = what the last frame showed), set (SetHeaderUnderneath),
+-- L> / L< (Layout hook before / after our work), A (ApplySystemAnchor), fit (FitSelection), f1-f6
+-- (next frames). The watch counts toggles whose map / block / cluster top differs between the steps
+-- the screen can show (L< onwards) and keeps the last such trace, so a rare jump is caught.
+local MAX_TRACE = 18
+
+local function Snap(tag)
 	local c = MinimapCluster
 	local y = c:GetNumPoints() > 0 and select(5, c:GetPoint(1))
 	local it = 0
 	if c.GetClampRectInsets then it = select(3, c:GetClampRectInsets()) or 0 end
-	local s = string.format("%s y%.1f i%.1f", tag, type(y) == "number" and y or 0, it)
-	if rects then
-		local t, ce = c:GetTop(), c:GetEffectiveScale()
-		local top
-		for _, f in ipairs({ Square.border, Square.header, ns.IconBar and ns.IconBar.frame }) do
-			local _, _, ft = ScreenRect(f)
-			if ft and (not top or ft > top) then top = ft end
-		end
-		s = s .. string.format(" c%.1f b%.1f", (t and ce) and t * ce or -1, top or -1)
+	local t, ce = c:GetTop(), c:GetEffectiveScale()
+	local ct = (t and ce) and t * ce or nil
+	local top
+	for _, f in ipairs({ Square.border, Square.header, ns.IconBar and ns.IconBar.frame }) do
+		local _, _, ft = ScreenRect(f)
+		if ft and (not top or ft > top) then top = ft end
 	end
+	local mt, me = Minimap:GetTop(), Minimap:GetEffectiveScale()
+	local mtop = (mt and me) and mt * me or nil
+	local k = "-"
+	local cont = Container()
+	if cont and cont:GetNumPoints() > 0 then
+		local _, rel, _, _, ky = cont:GetPoint(1)
+		local kind = (rel == standIns[cont] and "s") or (rel == c and "c") or "?"
+		k = string.format("%s%.1f", kind, type(ky) == "number" and ky or 0)
+	end
+	local s = string.format("%s y%.1f i%.1f c%.1f m%.1f b%.1f k%s", tag, type(y) == "number" and y or 0, it,
+		ct or -1, mtop or -1, top or -1, k)
+	return s, { tag = tag, c = ct, m = mtop, b = top }
+end
+
+local function TraceAdd(tag)
+	local tr = Square.toggleTrace
+	if not (Square.tracing and tr) or #tr >= MAX_TRACE then return end
+	local s, v = Snap(tag)
 	tr[#tr + 1] = s
+	local vals = Square.traceVals
+	if vals then vals[#vals + 1] = v end
+end
+
+-- Did the map, block or cluster top differ between the steps the screen can show (L< on)?
+local function TraceMoved(vals)
+	local from
+	for i, v in ipairs(vals) do if v.tag == "L<" then from = i break end end
+	if not from then return false end
+	for _, key in ipairs({ "m", "b", "c" }) do
+		local lo, hi
+		for i = from, #vals do
+			local x = vals[i][key]
+			if x then lo = lo and math.min(lo, x) or x; hi = hi and math.max(hi, x) or x end
+		end
+		if lo and hi - lo > 0.5 then return true end
+	end
+	return false
+end
+
+-- Edit Mode's AnchorSelectionFrame hook: the state just before a setting change (same frame).
+function Square.TracePre()
+	local ok, s = pcall(Snap, "pre")
+	if ok then Square.preSnap, Square.preTime = s, GetTime() end
 end
 
 function Square:TraceStart()
 	local gen = (self.traceGen or 0) + 1
-	self.traceGen, self.toggleTrace, self.tracing = gen, {}, true
+	self.traceGen, self.toggleTrace, self.traceVals, self.tracing = gen, {}, {}, true
+	if self.preSnap and self.preTime == GetTime() then self.toggleTrace[1] = self.preSnap end
+	self.preSnap = nil
 	pcall(TraceAdd, "set")
 	local n = 0
 	local function step()
 		if Square.traceGen ~= gen then return end
 		n = n + 1
-		pcall(TraceAdd, "f" .. n, true)
-		if n < 4 then C_Timer.After(0, step) else Square.tracing = false end
+		pcall(TraceAdd, "f" .. n)
+		if n < 6 then C_Timer.After(0, step) return end
+		Square.tracing = false
+		Square.watchN = (Square.watchN or 0) + 1
+		local ok, moved = pcall(TraceMoved, Square.traceVals or {})
+		if ok and moved then
+			Square.watchMoved = (Square.watchMoved or 0) + 1
+			Square.movedTrace = table.concat(Square.toggleTrace, " / ")
+		end
 	end
 	C_Timer.After(0, step)
 end
-Square.TraceAdd = function(tag, rects) pcall(TraceAdd, tag, rects) end
+Square.TraceAdd = function(tag) pcall(TraceAdd, tag) end
 
 function Square.TraceDebug()
 	local tr = Square.toggleTrace
 	return tr and #tr > 0 and table.concat(tr, " / ") or "-"
+end
+
+-- /mmap debug "Toggle watch:": toggles traced to the end, how many moved, the last one that moved.
+function Square.WatchDebug()
+	return Square.watchN or 0, Square.watchMoved or 0, Square.movedTrace or "-"
 end
 
 local function ValidShift(t)
@@ -924,36 +1006,58 @@ function Square:PlaceContainer(why)
 	-- mid-drag (isDragging: read only); the drag-end hook re-fits.
 	if c.isDragging or not s then return end
 	local dy
-	local key = ShiftKey(c)
+	local key, kind, mapR, bh = ShiftKey(c)
 	local kept = ns.db and ns.db.topShift
+	local how = "kept"
 	if why then
-		if not (key and ValidShift(kept) and kept.key == key) then
+		if key and ValidShift(kept) and kept.key == key then
+			dy = kept.dy
+		else
+			local e = key and KeepFind("topShifts", ValidShift, function(x) return x.key == key end)
+			if e then
+				dy = e.dy
+			else
+				-- Only the bar's height differs from a kept layout: the map moves by that difference
+				-- (the block's top, the bar's top, stays). Scales only, no rect reads.
+				local ce, ne = c:GetEffectiveScale(), cont:GetEffectiveScale()
+				local near = key and ce and ne and ne > 0 and KeepFind("topShifts", ValidShift, function(x)
+					return x.kind == kind and x.map == mapR and type(x.bh) == "number"
+				end)
+				if near then
+					dy = near.dy - (bh - near.bh) * ce / ne
+					how = "bar-adjusted"
+				end
+			end
+		end
+		if not dy then
 			TopLog(string.format("%s waits (key %s, kept %s)", why, tostring(key),
 				ValidShift(kept) and kept.key or "none"))
 			return -- the next frame's FitSelection measures
 		end
-		dy = kept.dy
 	else
 		local want, now = EdgeWant(c)
 		local ct, st = cont:GetTop(), s:GetTop()
 		local ne, se = cont:GetEffectiveScale(), s:GetEffectiveScale()
 		if want and ct and st and ne and ne > 0 then
 			dy = (ct * ne + (want - now) - st * se) / ne
-			if key and ns.db then ns.db.topShift = { key = key, dy = dy } end
+			if key and ns.db then
+				ns.db.topShift = { key = key, dy = dy }
+				KeepPut("topShifts", { key = key, dy = dy, kind = kind, map = mapR, bh = bh })
+			end
 		else
 			dy = 0 -- not measured yet (or the map size changed): Blizzard's own spot
 		end
 	end
 	local p, r2, rp, x, y = cont:GetPoint(1)
 	if cont:GetNumPoints() == 1 and p == "TOP" and r2 == s and rp == "TOP" and x == 0 and y and math.abs(y - dy) < 0.05 then
-		if why then TopLog(string.format("%s kept %.1f (already there)", why, dy)) end
+		if why then TopLog(string.format("%s %s %.1f (already there)", why, how, dy)) end
 		return
 	end
 	local was = (r2 == s and type(y) == "number") and string.format("%.1f", y) or "Blizzard's"
 	cont:ClearAllPoints()
 	cont:SetPoint("TOP", s, "TOP", 0, dy)
 	self.containerShift = dy
-	TopLog(string.format("%s %s %.1f (was %s)", why or "fit", why and "kept" or "measured", dy, was))
+	TopLog(string.format("%s %s %.1f (was %s)", why or "fit", why and how or "measured", dy, was))
 end
 
 -- /mmap debug "Map top:" line: Header Underneath, is Layout hookable, kept offset + key, last 4 moves.
@@ -1038,7 +1142,9 @@ function Square:FitSelection()
 			local u = self.under
 			if u == nil then u = Square.HeaderIsUnderneath() end
 			if type(ns.db.modeFit) ~= "table" then ns.db.modeFit = {} end
-			ns.db.modeFit[u and "on" or "off"] = { key = key, sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
+			local mode = u and "on" or "off"
+			ns.db.modeFit[mode] = { key = key, sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
+			KeepPut("modeFits", { key = mode .. " " .. key, sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } })
 		end
 	end
 	self:ApplyClamp()
@@ -1116,9 +1222,15 @@ function Square:KeepFitNow()
 	local u = self.under
 	if u == nil then u = Square.HeaderIsUnderneath() end
 	local all = ns.db and ns.db.modeFit
-	local kept = type(all) == "table" and all[u and "on" or "off"]
+	local mode = u and "on" or "off"
+	local kept = type(all) == "table" and all[mode]
 	local key = ShiftKey(c)
-	if not (key and ValidModeFit(kept, key)) then return end
+	if not key then return end
+	if not ValidModeFit(kept, key) then
+		local want = mode .. " " .. key
+		kept = KeepFind("modeFits", function(e) return ValidModeFit(e, want) end, function() return true end)
+		if not kept then return end
+	end
 	local changed = ClampChanged(self.fit and self.fit.clamp, kept.clamp)
 	if changed then
 		self.fit = { sel = { unpack(kept.sel) }, clamp = { unpack(kept.clamp) } }
@@ -1450,6 +1562,8 @@ function Square:InstallHooks()
 	for _, method in ipairs({ "AnchorSelectionFrame", "ApplySystemAnchor" }) do
 		if type(MinimapCluster[method]) == "function" then
 			hooksecurefunc(MinimapCluster, method, function()
+				-- /mmap debug trace (read only): the state before a setting change / the re-anchor
+				if method == "AnchorSelectionFrame" then Square.TracePre() else Square.TraceAdd("A") end
 				ns.SafeRun("EditModeBox", Square.ApplyClamp, Square)
 				Square:QueueFit()
 				if method == "ApplySystemAnchor" then

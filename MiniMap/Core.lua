@@ -482,6 +482,10 @@ local function PrintDebug()
 		local ok, under, hooked, kept, last = pcall(ns.Square.TopDebug)
 		if ok then ns.Print(L.DEBUG_TOP, under, hooked, kept, last) end
 	end
+	if ns.Square and ns.Square.TraceDebug then
+		local ok, trace = pcall(ns.Square.TraceDebug)
+		if ok then ns.Print(L.DEBUG_FRAMES, trace) end
+	end
 	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end
 

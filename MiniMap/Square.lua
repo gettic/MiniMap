@@ -849,6 +849,50 @@ local function TopLog(text)
 	Square.topLast = text
 end
 
+-- /mmap debug "Toggle frames:" (read only): at each step of the last Header Underneath toggle and the
+-- 4 frames after it, the cluster's anchor y (a clamp push shows here), the clamp's top inset and, where
+-- rects are read, the cluster's and the block's screen top. Steps: set (SetHeaderUnderneath), L> / L<
+-- (Layout hook before / after our work), fit (FitSelection), f1-f4 (next frames). Max 12 entries.
+local function TraceAdd(tag, rects)
+	local tr = Square.toggleTrace
+	if not (Square.tracing and tr) or #tr >= 12 then return end
+	local c = MinimapCluster
+	local y = c:GetNumPoints() > 0 and select(5, c:GetPoint(1))
+	local it = 0
+	if c.GetClampRectInsets then it = select(3, c:GetClampRectInsets()) or 0 end
+	local s = string.format("%s y%.1f i%.1f", tag, type(y) == "number" and y or 0, it)
+	if rects then
+		local t, ce = c:GetTop(), c:GetEffectiveScale()
+		local top
+		for _, f in ipairs({ Square.border, Square.header, ns.IconBar and ns.IconBar.frame }) do
+			local _, _, ft = ScreenRect(f)
+			if ft and (not top or ft > top) then top = ft end
+		end
+		s = s .. string.format(" c%.1f b%.1f", (t and ce) and t * ce or -1, top or -1)
+	end
+	tr[#tr + 1] = s
+end
+
+function Square:TraceStart()
+	local gen = (self.traceGen or 0) + 1
+	self.traceGen, self.toggleTrace, self.tracing = gen, {}, true
+	pcall(TraceAdd, "set")
+	local n = 0
+	local function step()
+		if Square.traceGen ~= gen then return end
+		n = n + 1
+		pcall(TraceAdd, "f" .. n, true)
+		if n < 4 then C_Timer.After(0, step) else Square.tracing = false end
+	end
+	C_Timer.After(0, step)
+end
+Square.TraceAdd = function(tag, rects) pcall(TraceAdd, tag, rects) end
+
+function Square.TraceDebug()
+	local tr = Square.toggleTrace
+	return tr and #tr > 0 and table.concat(tr, " / ") or "-"
+end
+
 local function ValidShift(t)
 	return type(t) == "table" and type(t.key) == "string" and type(t.dy) == "number" and t.dy == t.dy and math.abs(t.dy) < 2000
 end
@@ -944,6 +988,7 @@ end
 
 function Square:FitSelection()
 	if not self.active then return end
+	Square.TraceAdd("fit", true)
 	ns.SafeRun("MapTop", self.PlaceContainer, self)
 	local oldClamp = self.fit and self.fit.clamp
 	local c = MinimapCluster
@@ -986,6 +1031,15 @@ function Square:FitSelection()
 	-- Saved for the next load (ApplySaved), so Edit Mode's first layout pass uses them.
 	if ns.db then
 		ns.db.editFit = { sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
+		-- Also per Header Underneath setting + layout key, for the same-frame fit in the Layout hook
+		-- (KeepFitNow): the old setting's clamp on the re-sized cluster pushed the map for a frame.
+		local key = ShiftKey(c)
+		if key then
+			local u = self.under
+			if u == nil then u = Square.HeaderIsUnderneath() end
+			if type(ns.db.modeFit) ~= "table" then ns.db.modeFit = {} end
+			ns.db.modeFit[u and "on" or "off"] = { key = key, sel = { unpack(self.fit.sel) }, clamp = { unpack(self.fit.clamp) } }
+		end
 	end
 	self:ApplyClamp()
 	-- New insets: undo a stale clamp push (Edit Mode open: its live anchor; closed: KeepPlace).
@@ -1042,6 +1096,43 @@ function Square:UndoSaved()
 	sel:ClearAllPoints()
 	sel:SetAllPoints(c)
 	if c.SetClampRectInsets then c:SetClampRectInsets(0, 0, 0, 0) end
+end
+
+-- Same frame as Blizzard's Layout() (a Header Underneath toggle re-sizes the cluster): Edit Mode's
+-- toggle sets the clamp insets of the OLD setting first (AnchorSelectionFrame), so the game's screen
+-- clamp pushed the re-sized cluster in from the screen edge for one frame until the next frame's fit
+-- + Reanchor (beta.4 "still jumps", though the container was right). Here the box + clamp the last
+-- fresh fit found for this setting and layout key (ns.db.modeFit, no rect reads), and in Edit Mode a
+-- push is undone at once (Reanchor: plain SetPoint on Edit Mode's saved anchor). Out of combat, never
+-- mid-drag; another key (size changed) waits for the next frame's fit as before.
+local function ValidModeFit(t, key)
+	return type(t) == "table" and t.key == key and ValidSide(t.sel) and ValidSide(t.clamp)
+end
+
+function Square:KeepFitNow()
+	if not self.active or InCombatLockdown() then return end
+	local c = MinimapCluster
+	if not Usable(c) or c.isDragging then return end
+	local u = self.under
+	if u == nil then u = Square.HeaderIsUnderneath() end
+	local all = ns.db and ns.db.modeFit
+	local kept = type(all) == "table" and all[u and "on" or "off"]
+	local key = ShiftKey(c)
+	if not (key and ValidModeFit(kept, key)) then return end
+	local changed = ClampChanged(self.fit and self.fit.clamp, kept.clamp)
+	if changed then
+		self.fit = { sel = { unpack(kept.sel) }, clamp = { unpack(kept.clamp) } }
+		PutFit(self.fit)
+	end
+	if not InEditMode() then return end
+	local pushed = false
+	local a, a2 = SavedAnchor(c)
+	local scale = c:GetScale()
+	if a and scale and scale > 0 then
+		local ok, state = pcall(CompareAnchor, c, a, a2, scale)
+		pushed = ok and state == "pushed"
+	end
+	if changed or pushed then Reanchor() end
 end
 
 -- Next frame (anchors settled), once however often asked, after combat if needed.
@@ -1325,7 +1416,10 @@ function Square:InstallHooks()
 		end)
 	end
 	if MinimapCluster.SetHeaderUnderneath then
-		hooksecurefunc(MinimapCluster, "SetHeaderUnderneath", function(_, under) Square:PlacePieces(under, true) end)
+		hooksecurefunc(MinimapCluster, "SetHeaderUnderneath", function(_, under)
+			if Square.active then Square:TraceStart() end
+			Square:PlacePieces(under, true)
+		end)
 	end
 	if MinimapCluster.SetEditModeScale then
 		hooksecurefunc(MinimapCluster, "SetEditModeScale", function() Square:PlacePieces(nil, true) end)
@@ -1339,7 +1433,13 @@ function Square:InstallHooks()
 	-- Blizzard's re-layout (ResizeLayoutFrame:Layout, after a toggle or size change): the container
 	-- right away, so the map doesn't show one frame out of place.
 	if type(MinimapCluster.Layout) == "function" then
-		hooksecurefunc(MinimapCluster, "Layout", function() Square:PlaceContainerNow("layout") end)
+		hooksecurefunc(MinimapCluster, "Layout", function()
+			Square.TraceAdd("L>")
+			Square:PlaceContainerNow("layout")
+			-- the box + clamp of the new setting at once (no one-frame clamp push), same frame
+			ns.RunOutOfCombat("square-keepfit", function() ns.SafeRun("EditModeBox", Square.KeepFitNow, Square) end)
+			Square.TraceAdd("L<", true)
+		end)
 		self.layoutHooked = true
 	end
 	-- The cluster re-sizes itself (ResizeLayoutFrame): fit the Edit Mode box again.

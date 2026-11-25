@@ -57,18 +57,33 @@ Mini Map works by itself as soon as you log in. The only settings are the icon o
 
 ### Icon order
 
-You can put the icons in the bar under the map in any order. There are two ways:
+You can put the icons in the bar under the map in any order. There are three ways:
 
 - **Edit Mode:** open Edit Mode (**Esc > Edit Mode**) and drag an icon to its new spot. A gold line shows where it will land.
-- **Icon order window:** click **Arrange minimap icons** at the top of the addon menu (the addon counter on the map; hover it for a tooltip), or type `/mmap order`. Drag a row or use its up and down arrows. **Sort A-Z** puts the icons back by name. **Esc** closes the window.
+- **Icon order window:** click **Arrange minimap icons** at the top of the addon menu (the addon counter on the map; hover it for a tooltip), or type `/mmap order`. Drag a row or use its up and down arrows. **Sort A-Z** puts the icons back by name. **Esc** closes the window. While the window is open, you can also drag the icons in the bar itself, as in Edit Mode. Their clicks are paused until you close the window (in combat they work as normal).
+- **Options page:** the **Arrange icons...** button on the [options page](#options-page) opens the same window.
 
 The order is saved for your account. Icons of new addons go at the end. Icons that are gone keep their spot for when they come back. Blizzard's event button always stays last. In combat the order is saved and the bar follows when combat ends. `/mmap resetorder` also sorts the icons by name again.
+
+### Options page
+
+Mini Map has a page in **Esc > Options > AddOns > Mini Map**. You can also open it with `/mmap options` (not in combat).
+
+| Part | What it does |
+|---|---|
+| Arrange icons... | Opens the Icon order window. |
+| Sort A-Z | Sorts the icons by name (same as `/mmap resetorder`). |
+| Look now | Finds new minimap buttons (same as `/mmap rescan`). |
+| Library Books checkbox | Turns the Library Books fix on or off. |
+| Zygor checkbox | Turns the Zygor solid-line fix on or off. |
+| Run self-test | Runs the self-test (same as `/mmap selftest`). |
 
 **Chat command:**
 
 | Command | What it does |
 |---|---|
 | `/mmap` | Shows a short help. |
+| `/mmap options` | Opens Mini Map's page in Esc > Options > AddOns (not in combat). |
 | `/mmap order` | Opens or closes the Icon order window (see [Icon order](#icon-order)). |
 | `/mmap resetorder` | Sorts the icons under the map by name again. In combat, the bar follows when combat ends. |
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
@@ -125,6 +140,7 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
 | `IconBar.lua` | Finding minimap buttons, laying out the bar, the saved order and Edit Mode dragging. |
 | `OrderWindow.lua` | The Icon order window. |
+| `SettingsPage.lua` | The options page in Esc > Options > AddOns. |
 | `SelfTest.lua` | `/mmap selftest`: read-only checks and the copy box. |
 | `Compat_LibraryBooks.lua` | Moves Library Books' far-away pins onto the square's edge. |
 | `Compat_Zygor.lua` | Lengthens Zygor's "Solid lines" minimap path to the square's edge. |

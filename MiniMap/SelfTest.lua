@@ -301,7 +301,12 @@ local function CheckOrder()
 	local saved = ns.db and ns.db.iconOrder
 	if saved ~= nil and type(saved) ~= "table" then return "FAIL", L.ST_ORDER_BAD end
 	local _, under, list, catchersShown = Bar.State()
-	if (catchersShown or 0) > 0 and not InEditMode() then return "FAIL", L.ST_ORDER_CATCH:format(catchersShown) end
+	local W = ns.OrderWindow
+	local windowOpen = false
+	if W and W.State then windowOpen = select(2, W.State()) end
+	if (catchersShown or 0) > 0 and not InEditMode() and not windowOpen then
+		return "FAIL", L.ST_ORDER_CATCH:format(catchersShown)
+	end
 	list = list or {}
 	if #list < 2 then return "PASS", L.ST_ORDER_FEW end
 	local names, want = {}, {}
@@ -396,6 +401,18 @@ local function CheckMenu()
 	return "FAIL", L.ST_WINDOW_NOMENU
 end
 
+-- Options page: registered in Esc > Options > AddOns when this game has the settings API. Read only.
+local function CheckSettings()
+	local P = ns.SettingsPage
+	local S = Settings
+	if not (type(S) == "table" and type(S.RegisterVerticalLayoutCategory) == "function"
+		and type(S.RegisterAddOnCategory) == "function") then
+		return "SKIP", L.ST_SET_NONE
+	end
+	if P and P.CategoryID and P.CategoryID() ~= nil then return "PASS", L.ST_SET_OK end
+	return "FAIL", L.ST_SET_MISSING
+end
+
 local function CheckZygor()
 	local Z = ns.Zygor
 	if not (Z and Z.IsZygorLoaded and Z.IsZygorLoaded()) then return nil end
@@ -454,6 +471,7 @@ local CHECKS = {
 	{ L.ST_N_ORDER, CheckOrder },
 	{ L.ST_N_WINDOW, CheckWindow },
 	{ L.ST_N_MENU, CheckMenu },
+	{ L.ST_N_SETTINGS, CheckSettings },
 	{ L.ST_N_ZYGOR, CheckZygor, map = true },
 	{ L.ST_N_BOOKS, CheckBooks, map = true },
 	{ L.ST_N_SHAPE, CheckShape, map = true },

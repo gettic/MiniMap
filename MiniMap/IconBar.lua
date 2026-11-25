@@ -561,7 +561,8 @@ end
 local arrange            -- our holder (child of the bar): drop marker, combat events, drag OnUpdate
 local catchers = {}      -- [button] = our catcher frame
 local catcherOf = {}     -- [catcher] = its button
-local arranging = false  -- Edit Mode is open
+local sources = { edit = false, window = false } -- who wants the catchers: Edit Mode / the order window (never saved)
+local function Arranging() return sources.edit or sources.window end
 local inCombat = false   -- between PLAYER_REGEN_DISABLED and _ENABLED
 local drag               -- { button, name } while a drag runs
 
@@ -672,7 +673,7 @@ local function DragTick()
 end
 
 local function StartDrag(f)
-	if Fighting() or not arranging or drag then return end
+	if Fighting() or not Arranging() or drag then return end
 	drag = { button = f, name = NameOf(f) }
 	catchers[f].picked:Show()
 	if GameTooltip:GetOwner() == catchers[f] then GameTooltip:Hide() end
@@ -686,7 +687,7 @@ local function Drop()
 	local d = drag
 	local target, after = CursorSpot()
 	EndDrag()
-	if Fighting() or not arranging or not target or target == d.button then return end
+	if Fighting() or not Arranging() or not target or target == d.button then return end
 	local names = ShownNames()
 	local idx
 	for i, n in ipairs(names) do
@@ -734,10 +735,11 @@ local function Catcher(f)
 	return c
 end
 
--- Catchers over the shown icons while Edit Mode is open (out of combat), else all hidden.
+-- Catchers over the shown icons while Edit Mode or the order window is open, out of combat and with
+-- the bar shown; else all hidden (in combat the buttons work again; back after combat).
 function RefreshArrange()
 	if not (arrange and bar) then return end
-	local on = arranging and not Fighting() and bar:IsShown()
+	local on = Arranging() and not Fighting() and bar:IsShown()
 	if not on then EndDrag() end
 	local keep = {}
 	if on then
@@ -752,11 +754,15 @@ function RefreshArrange()
 	arrange:SetShown(on and true or false)
 end
 
+-- Which sources want the catchers now: edit, window (self-test / tests, read only).
+function Bar.ArrangeSources() return sources.edit, sources.window end
+
 -- The catcher over a button, or nil (offline tests, read only).
 function Bar.CatcherOf(f) return catchers[f] end
 
-function Bar:SetArrange(on)
-	arranging = on and true or false
+-- source: "edit" (Edit Mode hooks, the default) or "window" (order window OnShow/OnHide).
+function Bar:SetArrange(on, source)
+	sources[source == "window" and "window" or "edit"] = on and true or false
 	RefreshArrange()
 end
 
@@ -785,13 +791,13 @@ local function MakeArrange()
 	local em = EditModeManagerFrame
 	if em then
 		if type(em.EnterEditMode) == "function" then
-			hooksecurefunc(em, "EnterEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, true) end)
+			hooksecurefunc(em, "EnterEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, true, "edit") end)
 		end
 		if type(em.ExitEditMode) == "function" then
-			hooksecurefunc(em, "ExitEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, false) end)
+			hooksecurefunc(em, "ExitEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, false, "edit") end)
 		end
 	end
-	Bar:SetArrange(EditModeOpen())
+	Bar:SetArrange(EditModeOpen(), "edit")
 end
 
 -- /mmap debug "Bar order:" line: saved list, shown order, sorting on/off. Read only.
@@ -803,7 +809,7 @@ function Bar.OrderDebug()
 	local n = 0
 	for _, c in pairs(catchers) do if c:IsShown() then n = n + 1 end end
 	return savedText, (#shown > 0) and table.concat(shown, ", ") or "-",
-		tostring(arranging), n, tostring(drag ~= nil)
+		(sources.edit and "edit" or "") .. (sources.edit and sources.window and "+" or "") .. (sources.window and "window" or "") .. (Arranging() and "" or "off"), n, tostring(drag ~= nil)
 end
 
 ---------------------------------------------------------------------------

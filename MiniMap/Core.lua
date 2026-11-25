@@ -542,6 +542,8 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		end
 	elseif cmd == "resetorder" or (cmd == "reset" and arg == "order") then
 		if ns.IconBar:ResetOrder() then ns.Print(L.ORDER_RESET) else ns.Print(L.ORDER_AFTER_COMBAT) end
+	elseif (cmd == "options" or cmd == "settings" or cmd == "config") and ns.SettingsPage then
+		ns.SafeRun("SettingsPage", ns.SettingsPage.Open)
 	elseif cmd == "order" and ns.OrderWindow then
 		ns.SafeRun("OrderWindow", ns.OrderWindow.Toggle, ns.OrderWindow)
 	elseif cmd == "bookson" then
@@ -556,6 +558,7 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		ns.Zygor:SetOn(false)
 	else
 		ns.Print(L.HELP_1)
+		ns.Print(L.HELP_OPTIONS)
 		ns.Print(L.HELP_2)
 		ns.Print(L.HELP_ORDER)
 		ns.Print(L.HELP_3)

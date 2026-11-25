@@ -16,6 +16,7 @@ local rows = {}         -- our row buttons, reused
 local offset = 0        -- first list entry shown (mouse wheel scrolls)
 local drag              -- { key = button name, gap = insert-before index } while a row is dragged
 local combatNoted = false
+local HINT_TOP = 28      -- px from the window's top to the hint line (under the title)
 
 local function Ordered()
 	local Bar = ns.IconBar
@@ -190,8 +191,13 @@ function W:Refresh()
 		win.more:Hide()
 	end
 	local listH = math.max(1, visible) * (s.rowHeight + s.rowGap)
+	-- rows start under the hint, however many lines it wraps to
+	local top = math.max(s.top, HINT_TOP + (win.hint:GetStringHeight() or 0) + 8)
+	win.list:ClearAllPoints()
+	win.list:SetPoint("TOPLEFT", win, "TOPLEFT", s.side, -top)
+	win.list:SetPoint("TOPRIGHT", win, "TOPRIGHT", -s.side, -top)
 	win.list:SetHeight(listH)
-	win:SetHeight(s.top + listH + s.bottom)
+	win:SetHeight(top + listH + s.bottom)
 end
 
 ---------------------------------------------------------------------------
@@ -224,8 +230,8 @@ local function Build()
 	end
 	title:SetText(L.OW_TITLE)
 	local hint = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-	hint:SetPoint("TOPLEFT", f, "TOPLEFT", s.side, -28)
-	hint:SetPoint("TOPRIGHT", f, "TOPRIGHT", -s.side, -28)
+	hint:SetPoint("TOPLEFT", f, "TOPLEFT", s.side, -HINT_TOP)
+	hint:SetPoint("TOPRIGHT", f, "TOPRIGHT", -s.side, -HINT_TOP)
 	hint:SetJustifyH("LEFT")
 	hint:SetText(L.OW_HINT)
 	f.hint = hint
@@ -276,8 +282,16 @@ local function Build()
 		offset = offset - (delta or 0)
 		W:Refresh()
 	end)
-	f:SetScript("OnShow", function() W:Refresh() end)
-	f:SetScript("OnHide", EndDrag)
+	-- Open = the bar's icons can be dragged too (their clicks pause); every way of closing
+	-- (Esc, X, /mmap order, the menu line) hides the frame, so OnHide clears our source.
+	f:SetScript("OnShow", function()
+		ns.SafeRun("IconBarSort", ns.IconBar.SetArrange, ns.IconBar, true, "window")
+		W:Refresh()
+	end)
+	f:SetScript("OnHide", function()
+		EndDrag()
+		ns.SafeRun("IconBarSort", ns.IconBar.SetArrange, ns.IconBar, false, "window")
+	end)
 	f:RegisterEvent("PLAYER_REGEN_ENABLED")
 	f:SetScript("OnEvent", function()
 		combatNoted = false

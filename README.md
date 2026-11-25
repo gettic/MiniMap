@@ -18,7 +18,7 @@ Version 1.0.0. Please report anything that looks wrong on the [Issues](https://g
 |---|---|
 | Square map | The round minimap becomes square, with a thin Blizzard tooltip-style border around it. It stays square with "Rotate Minimap" on. |
 | No round ring | The round ring the game draws along the map edge around big quest and dig-site areas is hidden. The area itself still shows. |
-| Button bar | A bar under the map collects the minimap buttons of your other addons, in alphabetical order, so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. Buttons in the bar can't be dragged. |
+| Button bar | A bar under the map collects the minimap buttons of your other addons, sorted by name unless you set your own order (see [Icon order](#icon-order)), so they don't sit around the map's edge. This includes buttons made with LibDBIcon (for example Questie, TomTom, GatherMate2 and HandyNotes), Zygor's icon and All The Things' button. Every button gets the same square 24 px slot, with the icon cropped to fill it and the same hover and press look. Buttons that appear late are picked up too. |
 | Header | The zone name, clock, calendar and tracking buttons sit in their own framed strip just above the map. The zone and clock plate stretches to fill the strip between the tracking and calendar buttons, so long zone names fit. The whole group (tracking, zone and clock plate, calendar) is centred in the strip, with the same space on both sides. The clock sits at its right end. |
 | Corner buttons | The mail icon sits in the map's top-left corner and the addon compartment (the addon counter) in the bottom-right corner. The + / - zoom buttons show in the top-right corner when you hover the map: + upper-left, - lower-right, spaced like Blizzard's bottom-right layout. |
 | Day/night disc | Blizzard's day/night disc sits in the map's bottom-left corner. |
@@ -41,7 +41,7 @@ The bar hides itself when it has no buttons. Blizzard's event button also goes i
 
 ## How to use it
 
-Mini Map works by itself as soon as you log in. The only settings are the two compatibility switches (see [Other minimap addons](#other-minimap-addons); `/mmap bookson` and `/mmap zygoron`).
+Mini Map works by itself as soon as you log in. The only settings are the icon order (see [Icon order](#icon-order)) and the two compatibility switches (see [Other minimap addons](#other-minimap-addons); `/mmap bookson` and `/mmap zygoron`).
 
 **Move or size the minimap:** open Edit Mode (**Esc > Edit Mode**) and click the minimap.
 
@@ -53,12 +53,24 @@ Mini Map works by itself as soon as you log in. The only settings are the two co
 | Selection box | The box covers the map, its header strip and the button bar, so you can move the map flush into a screen corner. It snaps by those visible edges. |
 | Rotate Minimap | The map turns inside the square. |
 | Icon Size | The map markers resize as normal. |
+| Drag an icon in the bar | Changes the icon order (see [Icon order](#icon-order)). |
+
+### Icon order
+
+You can put the icons in the bar under the map in any order. There are two ways:
+
+- **Edit Mode:** open Edit Mode (**Esc > Edit Mode**) and drag an icon to its new spot. A gold line shows where it will land.
+- **Icon order window:** click **Mini Map** in the addon menu (the addon counter on the map), or type `/mmap order`. Drag a row or use its up and down arrows. **Sort A-Z** puts the icons back by name. **Esc** closes the window.
+
+The order is saved for your account. Icons of new addons go at the end. Icons that are gone keep their spot for when they come back. Blizzard's event button always stays last. In combat the order is saved and the bar follows when combat ends. `/mmap resetorder` also sorts the icons by name again.
 
 **Chat command:**
 
 | Command | What it does |
 |---|---|
 | `/mmap` | Shows a short help. |
+| `/mmap order` | Opens or closes the Icon order window (see [Icon order](#icon-order)). |
+| `/mmap resetorder` | Sorts the icons under the map by name again. In combat, the bar follows when combat ends. |
 | `/mmap rescan` | Puts minimap buttons that showed up late into the bar now. In combat, it waits until combat ends. |
 | `/mmap names` | Hold the mouse over a minimap button and type it to see the button's name, and its textures (size, art, crop, shown, alpha). If a button isn't picked up or looks wrong, tell us what it prints so we can fix it. |
 | `/mmap pos` | Prints where the minimap's Edit Mode frame is, the screen size and the clamp. Include it in a bug report about the minimap's position. |
@@ -111,12 +123,13 @@ The addon is in the `MiniMap` folder. It needs no libraries.
 | `Theme.lua` | All art, sizes and colours in one table. |
 | `Core.lua` | Start-up, saved settings, combat queue, other-addon check, `/mmap`. |
 | `Square.lua` | Square mask, hiding the round art, border, coordinates, header strip, corner buttons, day/night disc, layer. |
-| `IconBar.lua` | Finding minimap buttons and laying out the bar. |
+| `IconBar.lua` | Finding minimap buttons, laying out the bar, the saved order and Edit Mode dragging. |
+| `OrderWindow.lua` | The Icon order window. |
 | `SelfTest.lua` | `/mmap selftest`: read-only checks and the copy box. |
 | `Compat_LibraryBooks.lua` | Moves Library Books' far-away pins onto the square's edge. |
 | `Compat_Zygor.lua` | Lengthens Zygor's "Solid lines" minimap path to the square's edge. |
 
-Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload, and the two switches `booksNudge` and `zygorLines`.
+Saved settings: `MiniMapForeverDB` (account-wide). Position and size are saved by Edit Mode, not by Mini Map. Mini Map only keeps the size of Edit Mode's box (`editFit`), so the map stays in its corner after a reload, the icon order (`iconOrder`, a list of button names; empty means by name), and the two switches `booksNudge` and `zygorLines`.
 
 ## Licence
 

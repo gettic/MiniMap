@@ -3,6 +3,7 @@
 -- Blizzard button handled here (the event button) is just anchored into a bar slot.
 local ADDON, ns = ...
 local T = ns.Theme
+local L = ns.L
 
 local Bar = {}
 ns.IconBar = Bar
@@ -416,6 +417,88 @@ function PlaceOne(f)
 	placing = false
 end
 
+---------------------------------------------------------------------------
+-- Button order (saved in ns.db.iconOrder: a list of global frame names, nil = by name).
+-- Names in the list come first in list order, others (new addons) after them by name.
+-- Names of buttons that are gone stay in the list, so they come back in the same place.
+---------------------------------------------------------------------------
+-- The saved list, cleaned: strings only, no duplicates (the saved table is never changed here).
+local function OrderList()
+	local saved = ns.db and ns.db.iconOrder
+	local list, seen = {}, {}
+	if type(saved) ~= "table" then return list end
+	for _, name in ipairs(saved) do
+		if type(name) == "string" and name ~= "" and not seen[name] then
+			seen[name] = true
+			list[#list + 1] = name
+		end
+	end
+	return list
+end
+
+-- Sorts a list of names in place by the bar's order rule; returns it.
+function Bar.SortNames(names)
+	local rank = {}
+	for i, name in ipairs(OrderList()) do rank[name] = i end
+	table.sort(names, function(a, b)
+		local ra, rb = rank[a], rank[b]
+		if ra and rb then return ra < rb end
+		if ra or rb then return ra ~= nil end
+		return a < b
+	end)
+	return names
+end
+
+local function NameOf(f) return (f and f:GetName()) or "" end
+
+-- Moves `name` just in front of `before` (nil = after the last shown button) and saves.
+-- `shownNames` = the shown buttons' names in today's order. Names not on screen keep
+-- their place in the saved list.
+function Bar.MoveName(name, before, shownNames)
+	if type(name) ~= "string" or name == before then return false end
+	local full, inList = OrderList(), {}
+	for _, n in ipairs(full) do inList[n] = true end
+	-- Shown buttons not in the list yet are shown after the listed ones in this same order.
+	for _, n in ipairs(shownNames or {}) do
+		if not inList[n] then full[#full + 1] = n; inList[n] = true end
+	end
+	if not inList[name] then full[#full + 1] = name end
+	for i = #full, 1, -1 do
+		if full[i] == name then table.remove(full, i) end
+	end
+	local at
+	if before then
+		for i, n in ipairs(full) do
+			if n == before then at = i break end
+		end
+	else
+		local isShown = {}
+		for _, n in ipairs(shownNames or {}) do isShown[n] = true end
+		for i = #full, 1, -1 do
+			if isShown[full[i]] then at = i + 1 break end
+		end
+	end
+	table.insert(full, at or (#full + 1), name)
+	if ns.db then ns.db.iconOrder = full end
+	return true
+end
+
+-- Re-lays the bar after an order change: now, or after combat (never Layout in combat).
+-- Returns true when it ran now. The order window is refreshed either way.
+function Bar:ApplyOrder()
+	local now = ns.RunOutOfCombat("bar-order", function() if bar then Bar:Layout() end end)
+	if ns.OrderWindow and ns.OrderWindow.Refresh then ns.SafeRun("OrderWindow", ns.OrderWindow.Refresh, ns.OrderWindow) end
+	return now
+end
+
+-- /mmap resetorder and the window's button: back to sorting by name.
+function Bar:ResetOrder()
+	if ns.db then ns.db.iconOrder = nil end
+	return self:ApplyOrder()
+end
+
+local RefreshArrange -- defined in the Edit Mode sorting part below
+
 function Bar:Layout()
 	layoutPending = false
 	if not bar then return end
@@ -423,7 +506,14 @@ function Bar:Layout()
 	for _, f in ipairs(collected) do
 		if f:IsShown() then shown[#shown + 1] = f end
 	end
-	table.sort(shown, function(a, b) return (a:GetName() or "") < (b:GetName() or "") end)
+	local byName, names = {}, {}
+	for _, f in ipairs(shown) do
+		local n = NameOf(f)
+		byName[n] = f
+		names[#names + 1] = n
+	end
+	Bar.SortNames(names)
+	for i, n in ipairs(names) do shown[i] = byName[n] end
 	local ev = Bar.eventButton
 	if ev and ev:IsShown() then shown[#shown + 1] = ev end
 
@@ -431,6 +521,8 @@ function Bar:Layout()
 	Bar.shownCount = #shown
 	if #shown == 0 then
 		bar:Hide()
+		RefreshArrange()
+		if ns.OrderWindow and ns.OrderWindow.Refresh then ns.SafeRun("OrderWindow", ns.OrderWindow.Refresh, ns.OrderWindow) end
 		ns.Square:QueueFit()
 		return
 	end
@@ -448,6 +540,8 @@ function Bar:Layout()
 		o:SetShown(slotOf[f] ~= nil)
 	end
 	WatchAll()
+	RefreshArrange()
+	if ns.OrderWindow and ns.OrderWindow.Refresh then ns.SafeRun("OrderWindow", ns.OrderWindow.Refresh, ns.OrderWindow) end
 	ns.Square:QueueFit() -- bar height or side changed: Edit Mode box follows
 end
 
@@ -456,6 +550,260 @@ function Bar:QueueLayout()
 	if layoutPending then return end
 	layoutPending = true
 	C_Timer.After(0, function() Bar:Layout() end)
+end
+
+---------------------------------------------------------------------------
+-- Sorting in Edit Mode: our own catcher frames (children of the bar, strata T.order.strata,
+-- above Edit Mode's selection box) lie over the icons and take the drag. The buttons, their
+-- scripts and Blizzard's Edit Mode frames are never changed; nothing in Edit Mode is called
+-- except the IsEditModeActive read. Off in combat; the OnUpdate only runs during a drag.
+---------------------------------------------------------------------------
+local arrange            -- our holder (child of the bar): drop marker, combat events, drag OnUpdate
+local catchers = {}      -- [button] = our catcher frame
+local catcherOf = {}     -- [catcher] = its button
+local arranging = false  -- Edit Mode is open
+local inCombat = false   -- between PLAYER_REGEN_DISABLED and _ENABLED
+local drag               -- { button, name } while a drag runs
+
+local function EditModeOpen()
+	local em = EditModeManagerFrame
+	return em and type(em.IsEditModeActive) == "function" and em:IsEditModeActive() and true or false
+end
+
+local function Fighting() return inCombat or InCombatLockdown() end
+
+-- Shown addon buttons (not Blizzard's event button) in slot order.
+local function ShownInOrder()
+	local list = {}
+	for f in pairs(slotOf) do
+		if f ~= Bar.eventButton then list[#list + 1] = f end
+	end
+	table.sort(list, function(a, b) return slotOf[a] < slotOf[b] end)
+	return list
+end
+
+local function ShownNames()
+	local names = {}
+	for i, f in ipairs(ShownInOrder()) do names[i] = NameOf(f) end
+	return names
+end
+
+local function DisplayName(name) return (tostring(name):gsub("^LibDBIcon10_", "")) end
+Bar.DisplayName = DisplayName
+
+-- The shown addon buttons in the saved order (the order the bar has, or will have after
+-- combat). For the order window. Read only.
+function Bar.OrderedButtons()
+	local byName, names = {}, {}
+	for _, f in ipairs(ShownInOrder()) do
+		local n = NameOf(f)
+		byName[n] = f
+		names[#names + 1] = n
+	end
+	Bar.SortNames(names)
+	local list = {}
+	for i, n in ipairs(names) do list[i] = byName[n] end
+	return list, names
+end
+
+-- What a button's icon shows (for the order window): atlas or file + texcoords, or nil. Read only.
+function Bar.IconArt(f)
+	local ok, tex = pcall(FindIcon, f, T.iconSize)
+	if not (ok and tex) then return end
+	local atlas = AtlasOf(tex)
+	local file = tex.GetTextureFileID and tex:GetTextureFileID()
+	if not (type(file) == "number" and file > 0) then file = tex.GetTexture and tex:GetTexture() end
+	local coords
+	if tex.GetTexCoord then coords = { tex:GetTexCoord() } end
+	return atlas, file, coords
+end
+
+local function ScreenCenter(f)
+	local x, y = f:GetCenter()
+	if not (x and y) then return end
+	local s = f:GetEffectiveScale() or 1
+	return x * s, y * s
+end
+
+-- Drop spot for the cursor at screen x, y: the nearest shown icon, and whether the cursor is
+-- right of its centre (drop after it).
+function Bar.SpotAt(cx, cy)
+	local best, bestD, bestX
+	for _, f in ipairs(ShownInOrder()) do
+		local x, y = ScreenCenter(f)
+		if x then
+			local d = (x - cx) ^ 2 + (y - cy) ^ 2
+			if not bestD or d < bestD then best, bestD, bestX = f, d, x end
+		end
+	end
+	if best then return best, cx > bestX end
+end
+
+local function CursorSpot()
+	local cx, cy = GetCursorPosition()
+	if not (cx and cy) then return end
+	return Bar.SpotAt(cx, cy)
+end
+
+local function ShowMarker(f, after)
+	local m = arrange and arrange.marker
+	if not m then return end
+	if not f then m:Hide() return end
+	m:ClearAllPoints()
+	local dx = (T.iconGap / 2 + T.order.markerGap) * (after and 1 or -1)
+	m:SetPoint("CENTER", f, after and "RIGHT" or "LEFT", dx, 0)
+	m:Show()
+end
+
+local function EndDrag()
+	if arrange then
+		arrange:SetScript("OnUpdate", nil)
+		if arrange.marker then arrange.marker:Hide() end
+	end
+	local c = drag and catchers[drag.button]
+	if c then c.picked:Hide() end
+	drag = nil
+end
+Bar.CancelDrag = EndDrag
+
+local function DragTick()
+	if Fighting() or not drag then EndDrag() return end
+	ShowMarker(CursorSpot())
+end
+
+local function StartDrag(f)
+	if Fighting() or not arranging or drag then return end
+	drag = { button = f, name = NameOf(f) }
+	catchers[f].picked:Show()
+	if GameTooltip:GetOwner() == catchers[f] then GameTooltip:Hide() end
+	arrange:SetScript("OnUpdate", DragTick)
+	DragTick()
+end
+
+-- Mouse let go: the dragged icon goes in front of / after the icon under the marker.
+local function Drop()
+	if not drag then return end
+	local d = drag
+	local target, after = CursorSpot()
+	EndDrag()
+	if Fighting() or not arranging or not target or target == d.button then return end
+	local names = ShownNames()
+	local idx
+	for i, n in ipairs(names) do
+		if n == NameOf(target) then idx = i break end
+	end
+	if not idx then return end
+	local before -- nil = after the last shown icon
+	if after then before = names[idx + 1] else before = names[idx] end
+	if before == d.name then return end
+	if Bar.MoveName(d.name, before, names) then Bar:Layout() end
+end
+
+local function Catcher(f)
+	local c = catchers[f]
+	if c then return c end
+	c = CreateFrame("Frame", nil, bar)
+	c:SetFrameStrata(T.order.strata)
+	c:SetFrameLevel(bar:GetFrameLevel() + 5)
+	c:SetAllPoints(f)
+	c:EnableMouse(true)
+	c:RegisterForDrag("LeftButton")
+	c.hover = MakeArt(c, "ARTWORK", T.order.hover)
+	c.picked = MakeArt(c, "OVERLAY", T.order.picked)
+	c.hover:Hide()
+	c.picked:Hide()
+	c:SetScript("OnEnter", function(self)
+		self.hover:Show()
+		if drag then return end
+		GameTooltip:SetOwner(self, "ANCHOR_TOP")
+		GameTooltip:SetText(DisplayName(NameOf(catcherOf[self])), 1, 1, 1)
+		GameTooltip:AddLine(L.ORDER_TIP, nil, nil, nil, true)
+		GameTooltip:Show()
+	end)
+	c:SetScript("OnLeave", function(self)
+		self.hover:Hide()
+		if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+	end)
+	c:SetScript("OnDragStart", function(self) StartDrag(catcherOf[self]) end)
+	c:SetScript("OnDragStop", function() Drop() end)
+	c:SetScript("OnHide", function(self)
+		self.hover:Hide()
+		if drag and drag.button == catcherOf[self] then EndDrag() end
+	end)
+	catchers[f], catcherOf[c] = c, f
+	return c
+end
+
+-- Catchers over the shown icons while Edit Mode is open (out of combat), else all hidden.
+function RefreshArrange()
+	if not (arrange and bar) then return end
+	local on = arranging and not Fighting() and bar:IsShown()
+	if not on then EndDrag() end
+	local keep = {}
+	if on then
+		for _, f in ipairs(ShownInOrder()) do
+			keep[f] = true
+			Catcher(f):Show()
+		end
+	end
+	for f, c in pairs(catchers) do
+		if not keep[f] then c:Hide() end
+	end
+	arrange:SetShown(on and true or false)
+end
+
+-- The catcher over a button, or nil (offline tests, read only).
+function Bar.CatcherOf(f) return catchers[f] end
+
+function Bar:SetArrange(on)
+	arranging = on and true or false
+	RefreshArrange()
+end
+
+local function MakeArrange()
+	arrange = CreateFrame("Frame", nil, bar)
+	arrange:SetAllPoints(bar)
+	arrange:SetFrameStrata(T.order.strata)
+	arrange:SetFrameLevel(bar:GetFrameLevel() + 10)
+	arrange:EnableMouse(false)
+	local m = arrange:CreateTexture(nil, "OVERLAY")
+	T.SetAtlasOr(m, T.order.marker.atlas, T.order.marker.file)
+	if T.order.marker.blend then m:SetBlendMode(T.order.marker.blend) end
+	m:SetSize(T.order.markerW, T.iconSize + T.order.markerExtra)
+	m:Hide()
+	arrange.marker = m
+	arrange:Hide()
+	Bar.arrangeFrame = arrange
+	arrange:SetScript("OnHide", EndDrag)
+	arrange:RegisterEvent("PLAYER_REGEN_DISABLED")
+	arrange:RegisterEvent("PLAYER_REGEN_ENABLED")
+	arrange:SetScript("OnEvent", function(_, event)
+		inCombat = (event == "PLAYER_REGEN_DISABLED")
+		if inCombat then EndDrag() end
+		RefreshArrange()
+	end)
+	local em = EditModeManagerFrame
+	if em then
+		if type(em.EnterEditMode) == "function" then
+			hooksecurefunc(em, "EnterEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, true) end)
+		end
+		if type(em.ExitEditMode) == "function" then
+			hooksecurefunc(em, "ExitEditMode", function() ns.SafeRun("IconBarSort", Bar.SetArrange, Bar, false) end)
+		end
+	end
+	Bar:SetArrange(EditModeOpen())
+end
+
+-- /mmap debug "Bar order:" line: saved list, shown order, sorting on/off. Read only.
+function Bar.OrderDebug()
+	local saved = OrderList()
+	local savedText = (#saved > 0) and table.concat(saved, ", ") or L.ORDER_BY_NAME
+	local shown = ShownNames()
+	for i, n in ipairs(shown) do shown[i] = DisplayName(n) end
+	local n = 0
+	for _, c in pairs(catchers) do if c:IsShown() then n = n + 1 end end
+	return savedText, (#shown > 0) and table.concat(shown, ", ") or "-",
+		tostring(arranging), n, tostring(drag ~= nil)
 end
 
 ---------------------------------------------------------------------------
@@ -639,9 +987,12 @@ function Bar:SetSide(under)
 	ns.Square:QueueFit()
 end
 
--- /mmap selftest: number of collected buttons and whether the header is underneath. Read only.
+-- /mmap selftest: number of collected buttons, whether the header is underneath, the shown
+-- addon buttons in slot order and how many sorting catchers are shown. Read only.
 function Bar.State()
-	return #collected, headerUnder
+	local catchersShown = 0
+	for _, c in pairs(catchers) do if c:IsShown() then catchersShown = catchersShown + 1 end end
+	return #collected, headerUnder, ShownInOrder(), catchersShown
 end
 
 ---------------------------------------------------------------------------
@@ -665,6 +1016,7 @@ function Bar:Setup()
 	end
 	self:SetSide(HeaderIsUnderneath())
 	HookEventButton()
+	ns.SafeRun("IconBarSort", MakeArrange)
 
 	self:Scan()
 	-- Popups buttons make at any time (see WatchAll).

@@ -293,6 +293,75 @@ local function CheckBar()
 	return "PASS", L.ST_BAR_OK:format(n, under and L.ST_BAR_ABOVE or L.ST_BAR_UNDER)
 end
 
+-- Icon order: shown icons in the order the saved list (else the names) says, each one right of
+-- the one before it or in the next row; no sorting frames outside Edit Mode.
+local function CheckOrder()
+	local Bar = ns.IconBar
+	if not (Bar and Bar.active and Bar.frame and Bar.SortNames) then return "SKIP", L.ST_BAR_OFF end
+	local saved = ns.db and ns.db.iconOrder
+	if saved ~= nil and type(saved) ~= "table" then return "FAIL", L.ST_ORDER_BAD end
+	local _, under, list, catchersShown = Bar.State()
+	if (catchersShown or 0) > 0 and not InEditMode() then return "FAIL", L.ST_ORDER_CATCH:format(catchersShown) end
+	list = list or {}
+	if #list < 2 then return "PASS", L.ST_ORDER_FEW end
+	local names, want = {}, {}
+	for i, f in ipairs(list) do
+		names[i] = NameOf(f)
+		want[i] = names[i]
+	end
+	Bar.SortNames(want)
+	for i, n in ipairs(names) do
+		if want[i] ~= n then
+			for j, w in ipairs(want) do
+				if w == n then return "FAIL", L.ST_ORDER_WRONG:format(n, i, j) end
+			end
+		end
+	end
+	for i = 2, #list do
+		local pl, pr, pt, pb = Rect(list[i - 1])
+		local l, _, t, b = Rect(list[i])
+		if pl and l then
+			local pcy, cy = (pt + pb) / 2, (t + b) / 2
+			local sameRow = math.abs(pcy - cy) <= TOL and l >= pr - TOL
+			local nextRow
+			if under then nextRow = cy > pcy + TOL else nextRow = cy < pcy - TOL end
+			if not (sameRow or nextRow) then return "FAIL", L.ST_ORDER_PLACE:format(names[i], names[i - 1]) end
+		end
+	end
+	if type(saved) == "table" and #saved > 0 then return "PASS", L.ST_ORDER_OK:format(#list) end
+	return "PASS", L.ST_ORDER_NAME:format(#list)
+end
+
+-- Icon order window: the compartment function exists, Mini Map is in Blizzard's addon menu list
+-- (read only), and an open window lists the bar's icons in the bar's order.
+local function CheckWindow()
+	local W = ns.OrderWindow
+	if not W then return "FAIL", L.ST_WINDOW_NOFUNC end
+	if type(_G.MiniMapForever_OnCompartmentClick) ~= "function" then return "FAIL", L.ST_WINDOW_NOFUNC end
+	local listed
+	local reg = AddonCompartmentFrame and AddonCompartmentFrame.registeredAddons
+	if type(reg) == "table" then
+		local title = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Title")) or "Mini Map"
+		if IsSecret(title) then error(SECRET, 0) end
+		listed = false
+		for _, e in ipairs(reg) do
+			if type(e) == "table" and e.text == title then listed = true break end
+		end
+		if not listed then return "FAIL", L.ST_WINDOW_NOMENU end
+	end
+	local _, shown, keys, off = W.State()
+	if shown and ns.IconBar and ns.IconBar.OrderedButtons then
+		local _, names = ns.IconBar.OrderedButtons()
+		for i, k in ipairs(keys) do
+			local want = names[i + (off or 0)]
+			if k ~= want then return "FAIL", L.ST_WINDOW_ROWS:format(i, tostring(k), tostring(want)) end
+		end
+		return "PASS", L.ST_WINDOW_OPEN:format(#keys)
+	end
+	if listed == nil then return "PASS", L.ST_WINDOW_NOLIST end
+	return "PASS", L.ST_WINDOW_OK
+end
+
 local function CheckZygor()
 	local Z = ns.Zygor
 	if not (Z and Z.IsZygorLoaded and Z.IsZygorLoaded()) then return nil end
@@ -348,6 +417,8 @@ local CHECKS = {
 	{ L.ST_N_PLATE, CheckPlate, map = true },
 	{ L.ST_N_COORDS, CheckCoords, map = true },
 	{ L.ST_N_BAR, CheckBar },
+	{ L.ST_N_ORDER, CheckOrder },
+	{ L.ST_N_WINDOW, CheckWindow },
 	{ L.ST_N_ZYGOR, CheckZygor, map = true },
 	{ L.ST_N_BOOKS, CheckBooks, map = true },
 	{ L.ST_N_SHAPE, CheckShape, map = true },

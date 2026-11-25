@@ -102,6 +102,9 @@ local function InitDB()
 		db.oreLabels, db.orePins = nil, nil
 		db.dbVersion = 2
 	end
+	-- Icon bar order (a list of button names, nil = by name): a non-table value can't be read,
+	-- so it goes; a table is kept as it is (IconBar skips bad entries when reading it).
+	if db.iconOrder ~= nil and type(db.iconOrder) ~= "table" then db.iconOrder = nil end
 	for k, v in pairs(DEFAULTS) do
 		if db[k] == nil then db[k] = v end
 	end
@@ -490,6 +493,10 @@ local function PrintDebug()
 		local ok, n, moved, last = pcall(ns.Square.WatchDebug)
 		if ok then ns.Print(L.DEBUG_WATCH, n, moved, last) end
 	end
+	if ns.IconBar and ns.IconBar.active and ns.IconBar.OrderDebug then
+		local ok, saved, inBar, on, n, dragging = pcall(ns.IconBar.OrderDebug)
+		if ok then ns.Print(L.DEBUG_ORDER, saved, inBar, on, n, dragging) end
+	end
 	if not pcall(PrintMouse) then ns.Print(L.DEBUG_MOUSE_NONE) end
 end
 
@@ -513,7 +520,7 @@ ns.ParseSlash = ParseSlash
 
 SLASH_MINIMAPFOREVER1 = "/mmap"
 SlashCmdList.MINIMAPFOREVER = function(msg)
-	local cmd = ParseSlash(msg)
+	local cmd, arg = ParseSlash(msg)
 	if cmd == "names" then
 		PrintNames()
 	elseif cmd == "pos" then
@@ -533,6 +540,10 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 		else
 			ns.Print(L.RESCANNED, ns.IconBar:Scan())
 		end
+	elseif cmd == "resetorder" or (cmd == "reset" and arg == "order") then
+		if ns.IconBar:ResetOrder() then ns.Print(L.ORDER_RESET) else ns.Print(L.ORDER_AFTER_COMBAT) end
+	elseif cmd == "order" and ns.OrderWindow then
+		ns.SafeRun("OrderWindow", ns.OrderWindow.Toggle, ns.OrderWindow)
 	elseif cmd == "bookson" then
 		ns.Books:SetOn(true)
 	elseif cmd == "mouse" then
@@ -546,6 +557,7 @@ SlashCmdList.MINIMAPFOREVER = function(msg)
 	else
 		ns.Print(L.HELP_1)
 		ns.Print(L.HELP_2)
+		ns.Print(L.HELP_ORDER)
 		ns.Print(L.HELP_3)
 		ns.Print(L.HELP_4)
 		ns.Print(L.HELP_5)

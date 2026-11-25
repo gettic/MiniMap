@@ -93,6 +93,37 @@ local Theme = {
 		down = { atlas = "UI-HUD-ActionBar-IconFrame-Down", file = "Interface\\Buttons\\UI-Quickslot-Depress" },
 	},
 
+	-- Sorting the icon bar in Edit Mode (IconBar.lua): `hover` over the icon under the mouse,
+	-- `picked` on the icon being dragged, `marker` = drop line (Blizzard's Cooldown Manager
+	-- reorder marker, with the file that marker's XML uses as fallback), `markerW` px wide,
+	-- `markerExtra` px taller than an icon, `markerGap` px from the icon's side.
+	order = {
+		strata = "HIGH", -- above Edit Mode's selection box (MEDIUM, level 1000)
+		hover = { atlas = "UI-HUD-ActionBar-IconFrame-Mouseover", file = "Interface\\Buttons\\ButtonHilight-Square", blend = "ADD" },
+		picked = { atlas = "UI-HUD-ActionBar-IconFrame-Down", file = "Interface\\Buttons\\UI-Quickslot-Depress" },
+		marker = { atlas = "CDM-vertical", file = "Interface\\ChatFrame\\UI-ChatFrame-DockHighlight", blend = "ADD" },
+		markerW = 8, markerExtra = 10, markerGap = 1,
+	},
+
+	-- "Icon order" window (OrderWindow.lua, opened from the addon compartment menu). Blizzard
+	-- templates and files by name: `template` + plain fallback, row highlight like the friends
+	-- and addon lists, the classic scroll-bar arrows, drop line = Cooldown Manager's horizontal
+	-- reorder marker (fallback: a gold line).
+	orderWindow = {
+		template = "BasicFrameTemplateWithInset",
+		buttonTemplate = "UIPanelButtonTemplate",
+		strata = "DIALOG",
+		width = 280, top = 62, bottom = 40, side = 12, -- top: title + a two-line hint
+		rowHeight = 26, rowGap = 2, maxRows = 12, iconSize = 20, arrowSize = 22,
+		highlight = "Interface\\QuestFrame\\UI-QuestTitleHighlight",
+		up = { up = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Up", down = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Down",
+			disabled = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Disabled", highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollUpButton-Highlight" },
+		downArrow = { up = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Up", down = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Down",
+			disabled = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Disabled", highlight = "Interface\\Buttons\\UI-ScrollBar-ScrollDownButton-Highlight" },
+		marker = { atlas = "cdm-horizontal", file = "Interface\\Buttons\\WHITE8X8", color = { 1, 0.82, 0, 0.9 }, height = 8, fileHeight = 2 },
+		picked = 0.4, -- alpha of the row being dragged
+	},
+
 	-- Round-minimap art other addons put on their buttons (LibDBIcon ring, background,
 	-- highlight). Hidden (alpha 0) in the bar. Paths: lower case, no extension.
 	foreignArt = {

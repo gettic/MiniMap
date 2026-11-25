@@ -2,7 +2,7 @@
 
 A square minimap with a bar under it that holds the minimap buttons. A World of Warcraft addon for **WoW Forever**.
 
-Version 1.0.0. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
+Version 1.1.0. Please report anything that looks wrong on the [Issues](https://github.com/gettic/MiniMap/issues) page.
 
 - [What it does](#what-it-does)
 - [Install](#install)

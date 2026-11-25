@@ -60,7 +60,7 @@ Mini Map works by itself as soon as you log in. The only settings are the icon o
 You can put the icons in the bar under the map in any order. There are two ways:
 
 - **Edit Mode:** open Edit Mode (**Esc > Edit Mode**) and drag an icon to its new spot. A gold line shows where it will land.
-- **Icon order window:** click **Mini Map** in the addon menu (the addon counter on the map), or type `/mmap order`. Drag a row or use its up and down arrows. **Sort A-Z** puts the icons back by name. **Esc** closes the window.
+- **Icon order window:** click **Arrange minimap icons** at the top of the addon menu (the addon counter on the map; hover it for a tooltip), or type `/mmap order`. Drag a row or use its up and down arrows. **Sort A-Z** puts the icons back by name. **Esc** closes the window.
 
 The order is saved for your account. Icons of new addons go at the end. Icons that are gone keep their spot for when they come back. Blizzard's event button always stays last. In combat the order is saved and the bar follows when combat ends. `/mmap resetorder` also sorts the icons by name again.
 

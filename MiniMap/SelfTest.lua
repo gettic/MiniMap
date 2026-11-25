@@ -336,16 +336,14 @@ end
 -- (read only), and an open window lists the bar's icons in the bar's order.
 local function CheckWindow()
 	local W = ns.OrderWindow
-	if not W then return "FAIL", L.ST_WINDOW_NOFUNC end
-	if type(_G.MiniMapForever_OnCompartmentClick) ~= "function" then return "FAIL", L.ST_WINDOW_NOFUNC end
+	if not (W and W.Toggle and W.MenuEntry) then return "FAIL", L.ST_WINDOW_NOFUNC end
 	local listed
 	local reg = AddonCompartmentFrame and AddonCompartmentFrame.registeredAddons
 	if type(reg) == "table" then
-		local title = (C_AddOns and C_AddOns.GetAddOnMetadata and C_AddOns.GetAddOnMetadata(ADDON, "Title")) or "Mini Map"
-		if IsSecret(title) then error(SECRET, 0) end
+		local mine = W.MenuEntry()
 		listed = false
 		for _, e in ipairs(reg) do
-			if type(e) == "table" and e.text == title then listed = true break end
+			if mine and e == mine then listed = true break end
 		end
 		if not listed then return "FAIL", L.ST_WINDOW_NOMENU end
 	end
@@ -360,6 +358,42 @@ local function CheckWindow()
 	end
 	if listed == nil then return "PASS", L.ST_WINDOW_NOLIST end
 	return "PASS", L.ST_WINDOW_OK
+end
+
+-- Our addon menu line: does Blizzard's own compare (strcmputf8i on StripHyperlinks, as its sort
+-- does) put it before every other entry? Pure function calls, nothing is sorted or changed.
+-- Without those functions: our place in the list as it is now. Not first = SKIP with the detail.
+local function CheckMenu()
+	local W = ns.OrderWindow
+	local mine = W and W.MenuEntry and W.MenuEntry()
+	local reg = AddonCompartmentFrame and AddonCompartmentFrame.registeredAddons
+	if type(reg) ~= "table" then return "SKIP", L.ST_MENU_NONE end
+	if not mine then return "FAIL", L.ST_WINDOW_NOMENU end
+	local cmp = strcmputf8i
+	local strip = C_StringUtil and C_StringUtil.StripHyperlinks
+	if type(cmp) == "function" and type(strip) == "function" then
+		local a = strip(mine.text)
+		if IsSecret(a) then error(SECRET, 0) end
+		local before, place = nil, 1
+		for _, e in ipairs(reg) do
+			if e ~= mine and type(e) == "table" and type(e.text) == "string" then
+				local b = strip(e.text)
+				if cmp(b, a) < 0 then
+					place = place + 1
+					before = before or b
+				end
+			end
+		end
+		if place == 1 then return "PASS", L.ST_MENU_FIRST:format(#reg) end
+		return "SKIP", L.ST_MENU_AFTER:format(tostring(before):gsub("|", "||"):sub(1, 40), place, #reg)
+	end
+	for i, e in ipairs(reg) do
+		if e == mine then
+			if i == 1 then return "PASS", L.ST_MENU_FIRST:format(#reg) end
+			return "SKIP", L.ST_MENU_PLACE:format(i, #reg)
+		end
+	end
+	return "FAIL", L.ST_WINDOW_NOMENU
 end
 
 local function CheckZygor()
@@ -419,6 +453,7 @@ local CHECKS = {
 	{ L.ST_N_BAR, CheckBar },
 	{ L.ST_N_ORDER, CheckOrder },
 	{ L.ST_N_WINDOW, CheckWindow },
+	{ L.ST_N_MENU, CheckMenu },
 	{ L.ST_N_ZYGOR, CheckZygor, map = true },
 	{ L.ST_N_BOOKS, CheckBooks, map = true },
 	{ L.ST_N_SHAPE, CheckShape, map = true },

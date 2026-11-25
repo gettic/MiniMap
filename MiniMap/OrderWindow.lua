@@ -1,5 +1,5 @@
--- Mini Map: the "Icon order" window, opened from the addon compartment menu (the addon counter
--- on the map; the .toc's AddonCompartmentFunc) or /mmap order. Our own frame on a plain Blizzard
+-- Mini Map: the "Icon order" window, opened from our " Arrange minimap icons" line in the addon
+-- compartment menu (the addon counter on the map; RegisterAddon, see the end) or /mmap order. Our own frame on a plain Blizzard
 -- template: one row per icon in the bar (number, icon, name, up/down arrows); drag a row or use
 -- its arrows; "Sort A-Z" goes back to sorting by name. Saves to ns.db.iconOrder through
 -- IconBar (Bar.MoveName); the bar is re-laid now or after combat (Bar:ApplyOrder).
@@ -308,8 +308,53 @@ function W.State()
 end
 W.Rows = function() return rows end
 
--- Named in the .toc (## AddonCompartmentFunc): the addon compartment menu's line for Mini Map.
--- The click arguments are not used (they differ between game versions): it only opens/closes.
-function MiniMapForever_OnCompartmentClick()
+---------------------------------------------------------------------------
+-- Our line in Blizzard's addon menu (the addon counter on the map), added with the documented
+-- AddonCompartmentFrame:RegisterAddon, once, at login. Its text starts with a space so
+-- Blizzard's own A-Z sort puts it first; the menu's sort, generator and rows are never touched
+-- and no field of that frame is written by us. The click only opens/closes the window (the
+-- menu's arguments are ignored); the tooltip only uses GameTooltip.
+---------------------------------------------------------------------------
+local menuEntry -- the table we gave RegisterAddon (nil until registered)
+local MENU_ICON = "Interface\\Icons\\INV_Misc_Map_01" -- a game icon by path (same as the .toc's IconTexture)
+
+local function MenuClick()
 	ns.SafeRun("OrderWindow", W.Toggle, W)
 end
+
+local function MenuEnter(btn)
+	if not btn then return end
+	GameTooltip:SetOwner(btn, "ANCHOR_RIGHT")
+	GameTooltip:SetText(L.MENU_TIP, nil, nil, nil, nil, true)
+	GameTooltip:Show()
+end
+
+local function MenuLeave(btn)
+	if btn and GameTooltip:GetOwner() == btn then GameTooltip:Hide() end
+end
+
+function W.RegisterInMenu()
+	if menuEntry then return true end
+	local f = AddonCompartmentFrame
+	if not (f and type(f.RegisterAddon) == "function") then return false end
+	local entry = {
+		text = L.MENU_TEXT,
+		icon = MENU_ICON,
+		func = function() MenuClick() end,
+		funcOnEnter = function(btn) MenuEnter(btn) end,
+		funcOnLeave = function(btn) MenuLeave(btn) end,
+	}
+	local ok = pcall(f.RegisterAddon, f, entry)
+	if ok then menuEntry = entry end
+	return ok
+end
+
+-- Self-test: the table we registered (compared by identity in the menu's list), or nil.
+function W.MenuEntry() return menuEntry end
+
+local loginWatch = CreateFrame("Frame")
+loginWatch:RegisterEvent("PLAYER_LOGIN")
+loginWatch:SetScript("OnEvent", function(self)
+	self:UnregisterEvent("PLAYER_LOGIN")
+	ns.SafeRun("AddonMenu", W.RegisterInMenu)
+end)
